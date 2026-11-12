@@ -1,0 +1,16 @@
+#!/bin/sh
+# Sync completed main-branch commits to the project's private GitHub repository.
+branch=$(git symbolic-ref --quiet --short HEAD) || exit 0
+[ "$branch" = main ] || exit 0
+
+expected_remote=https://github.com/trendiseco/trendise-greenfield.git
+push_urls=$(git remote get-url --push --all origin) || exit 0
+if [ "$push_urls" != "$expected_remote" ]; then
+  printf '%s\n' 'TRENDISE sync skipped because origin has a different push destination.' >&2
+  exit 0
+fi
+
+if ! git push origin HEAD:refs/heads/main; then
+  printf '%s\n' 'TRENDISE commit saved locally. GitHub sync failed. Retry with git push origin main.' >&2
+  exit 1
+fi

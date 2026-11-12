@@ -82,3 +82,11 @@ Restore only into an empty local development database using psql. No destructive
 ## Development limits
 
 This remains a local mock development application. Fixed demo PINs/OTPs and session tokens are not production authentication. No real customer data or photographs should be entered. Images are stored inline with the state and increase request/database size. Coarse locking and full projection rebuilding favor understandable correctness over throughput. API defaults to requiring PostgreSQL and fails closed if unavailable. Explicit `ALLOW_MEMORY=true` with DATABASE_URL unset is available only for isolated demonstrations/tests and is not durable. The server refuses production mode, non-development TRENDISE_ENV and MOCK_ONLY=false. Live integrations require separate UAT authorization.
+
+## Sync completed changes to GitHub
+
+The local Git hook pushes each completed commit on `main` to the private
+`trendiseco/trendise-greenfield` GitHub repository. On a new clone, install it
+once with `git config --local core.hooksPath .githooks` and authenticate Git
+for that repository. Working files sync when committed. A failed push leaves
+the commit locally, and `git push origin main` retries it.
