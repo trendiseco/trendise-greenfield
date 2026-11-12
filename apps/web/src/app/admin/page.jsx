@@ -5,6 +5,7 @@ import LocalStylePreview from '../../components/LocalStylePreview';
 import SizeChartEditor from '../../components/SizeChartEditor';
 import SizeChart from '../../components/SizeChart';
 import AdminDashboard from '../../components/AdminDashboard';
+import ShippingRates from '../../components/ShippingRates';
 import AdminOrders from '../../components/AdminOrders';
 import WebsiteAdmin from '../../components/WebsiteAdmin';
 import {orderListLabels} from '../../../../../shared/admin-orders.mjs';
@@ -13,7 +14,7 @@ import ProductVisual from '../../components/ProductVisual';
 const fresh=()=>({name:'',slug:'',category:'Shirts',description:'',fabric:'',fit:'',images:[],variants:[{sku:'',barcode:'',color:'',size:'',price:1499}]});
 const managementTabs=[
  ['admin-dashboard','Dashboard'],['admin-orders','Orders & returns'],
- ['admin-products','Products'],['website-controls','Website & offers'],['admin-inventory','Inventory']
+ ['admin-products','Products'],['admin-shipping','Shipping'],['website-controls','Website & offers'],['admin-inventory','Inventory']
 ];
 const governanceTabs=[['admin-approvals','Approvals'],['admin-staff','Staff & roles']];
 
@@ -54,6 +55,7 @@ export default function Admin(){
  <StaffTabs label="Management sections" tabs={tabs} active={section} onChange={openSection}/>
  <div className="operations-pane" hidden={section!=='admin-dashboard'}>{summary?.status?<AdminDashboard data={summary} onOpenOrders={openOrders}/>:<p role="status">Loading dashboard…</p>}</div>
  <div className="operations-pane" hidden={section!=='admin-orders'}><AdminOrders key={token+orderFilter} token={token} filter={isOrderList?orderFilter:'all'} onFilter={openOrders} onReviewed={()=>api('/api/admin/summary',{token}).then(S).catch(()=>{})}/></div>
+ <div className="operations-pane" hidden={section!=='admin-shipping'}><ShippingRates token={token}/></div>
  <div className="operations-pane" hidden={section!=='website-controls'}><WebsiteAdmin token={token} products={catalog.products} onOpenProducts={()=>openSection('admin-products')}/></div>
  <div className="operations-pane" hidden={section!=='admin-products'}>
  <section className="staff-panel" id="admin-products" hidden={!!editor}><div className="panel-heading"><h2>Products</h2><button onClick={()=>{D(fresh());V(null);}}>Create product</button></div>{[...catalog.products,...Object.values(catalog.drafts).filter(d=>!catalog.products.some(p=>p.id===d.product.id)).map(d=>d.product)].map(p=><div className="m02-row" key={p.id}><strong>{p.name}<small style={{display:'block',fontWeight:400}}>Product ID: {p.id}</small></strong><span>{catalog.drafts[p.id]?.status||'published'} · {p.variants.length} variants</span><button onClick={()=>edit(p)}>Edit / preview</button></div>)}</section>

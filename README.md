@@ -90,3 +90,14 @@ The local Git hook pushes each completed commit on `main` to the private
 once with `git config --local core.hooksPath .githooks` and authenticate Git
 for that repository. Working files sync when committed. A failed push leaves
 the commit locally, and `git push origin main` retries it.
+
+## Shiprocket courier lookup for private UAT
+
+Create a dedicated Shiprocket API user in Shiprocket → Settings → API.
+Set `SHIPROCKET_RATE_LOOKUP=true`, `SHIPROCKET_API_EMAIL`,
+`SHIPROCKET_API_PASSWORD`, and your confirmed `SHIPROCKET_PICKUP_PIN` in the
+local ignored `.env` or the API process environment. Restart the API, then
+open Admin → Shipping and enter a sample destination PIN, parcel weight, and
+payment type. This uses only authentication and the courier serviceability
+endpoint. Checkout charges, order booking, AWBs, pickup, returns, and Razorpay
+remain mocked. API credentials belong on the server only.

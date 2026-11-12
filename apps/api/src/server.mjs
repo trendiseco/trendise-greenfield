@@ -1,3 +1,4 @@
+import {createShiprocketLookup} from './shiprocket.mjs';
 import {adminDashboard} from './admin-dashboard.mjs';
 import {policyDocument} from '../../../shared/order-policy.mjs';
 import http from 'node:http';
@@ -22,7 +23,8 @@ async function bodyOf(req){
 }
 function tokenFrom(req){const h=req.headers.authorization||'';return h.startsWith('Bearer ')?h.slice(7):'';}
 
-export function createServer(core=commerce){
+const ratePath='/api/admin/shipping/rates';
+export function createServer(core=commerce,lookupRates=createShiprocketLookup()){
 const handle=async (req,res)=>{
   const origin=req.headers.origin||'';
   if(allowedOrigins.has(origin)){
@@ -71,6 +73,11 @@ const handle=async (req,res)=>{
     if(req.method==='POST'&&verify){const s=core.session(tokenFrom(req));const b=await bodyOf(req);return respond(res,200,await core.warehouseVerify(s,verify[1],b.pickCode,b.barcode));}
     const ship=path.match(/^\/api\/warehouse\/orders\/(TRD-\d+)\/dispatch$/);
     if(req.method==='POST'&&ship){const s=core.session(tokenFrom(req));return respond(res,200,await core.dispatch(s,ship[1]));}
+    if(is('POST',ratePath)){
+      const authorize=()=>core.session(tokenFrom(req),['admin','superadmin']);
+      if(core.unit)await core.unit(authorize,{readOnly:true});else authorize();
+      return respond(res,200,await lookupRates(await bodyOf(req)));
+    }
     if(path.startsWith('/api/admin/')){
       const staff=core.session(tokenFrom(req));
       if(is('GET','/api/admin/orders'))return respond(res,200,core.adminOrderList(staff,url.searchParams));
@@ -103,16 +110,16 @@ const handle=async (req,res)=>{
     if(is('POST','/api/tryon/mock')){core.session(tokenFrom(req),['customer']);const b=await bodyOf(req);if(!b.sku)throw new DomainError(400,'Select a product');core.product(b.sku);return respond(res,200,{status:'mock_only',generatedImage:null,message:'Virtual try-on generation is intentionally disabled in Development. No photos are uploaded to AI providers.'});}
     return respond(res,404,{error:'Endpoint not found',code:'NOT_FOUND'});
   }catch(err){
-    if(core.unit)throw err;
+    if(core.unit&&path!==ratePath)throw err;
     const status=err instanceof DomainError?err.status:500;
     if(status===500)console.error(err);
     return respond(res,status,{error:status===500?'Internal server error':err.message,code:err.code||'INTERNAL_ERROR'});
   }
 };
 return http.createServer(async(req,res)=>{
- if(!core.unit||req.method==='OPTIONS')return handle(req,res);
- let response;const buffered={setHeader:(...args)=>res.setHeader(...args),writeHead:(status,headers)=>{response={status,headers};},end:body=>{response={...response,body};}};
  const path=new URL(req.url,'http://localhost').pathname;
+ if(!core.unit||req.method==='OPTIONS'||(req.method==='POST'&&path===ratePath))return handle(req,res);
+ let response;const buffered={setHeader:(...args)=>res.setHeader(...args),writeHead:(status,headers)=>{response={status,headers};},end:body=>{response={...response,body};}};
  // Account reads can initialize a profile. Other GET handlers only need a snapshot.
  const readOnly=req.method==='GET'&&path!=='/api/account';
  try{await core.unit(()=>handle(req,buffered),{readOnly});res.writeHead(response.status,response.headers);res.end(response.body);}catch(e){console.error(e);respond(res,e instanceof DomainError?e.status:503,{error:e instanceof DomainError?e.message:'Database transaction unavailable; no changes committed',code:e.code||'DATABASE_UNAVAILABLE'});}
