@@ -4,4 +4,4 @@ The homepage plays four muted films in sequence: the existing Admin-selected her
 
 The three supplied files were optimized to H.264 MP4, at most 1280 pixels wide, with audio removed and fast-start metadata. Source files in Downloads were preserved. Each new clip has its own loading poster. Only the active video is loaded.
 
-Additional film paths and their playback order are in shared/hero-films.mjs. The existing first film and poster remain configurable through the current website Admin. No database migration, reseed or live service is needed.
+Additional film paths and their playback order are in shared/hero-films.mjs. The existing first film and poster remain configurable through the current website Admin. The four default MP4s are served from the public Supabase Storage bucket `storefront-films`. The player resolves legacy bundled paths to those cloud URLs, including paths already saved in website settings. Custom Admin-selected media and local posters keep their existing behavior. The MP4s retained in GitHub are backups and are optional for running the app. The website and API still require a running host.
