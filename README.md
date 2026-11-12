@@ -93,11 +93,11 @@ the commit locally, and `git push origin main` retries it.
 
 ## Shiprocket courier lookup for private UAT
 
-Create a dedicated Shiprocket API user in Shiprocket → Settings → API.
+Use a sandbox API user as described in the Shiprocket API Sandbox dashboard.
 Set `SHIPROCKET_RATE_LOOKUP=true`, `SHIPROCKET_API_EMAIL`,
 `SHIPROCKET_API_PASSWORD`, and your confirmed `SHIPROCKET_PICKUP_PIN` in the
 local ignored `.env` or the API process environment. Restart the API, then
 open Admin → Shipping and enter a sample destination PIN, parcel weight, and
-payment type. This uses only authentication and the courier serviceability
-endpoint. Checkout charges, order booking, AWBs, pickup, returns, and Razorpay
+payment type. Authentication and courier serviceability both use the Shiprocket sandbox
+host. The lookup never falls back to the live Shiprocket API. Checkout charges, order booking, AWBs, pickup, returns, and Razorpay
 remain mocked. API credentials belong on the server only.

@@ -18,6 +18,7 @@ test('Shiprocket lookup sends only parcel inputs and reuses authentication',asyn
  const data=await lookup({deliveryPin:'110001',weightKg:0.5,cod:true,address:'Must not leave TRENDISE'});
  await lookup({deliveryPin:'400001',weightKg:1,cod:false});
  assert.equal(requests.length,3);
+ assert.ok(requests.every(({url})=>url.origin==='https://api-sandbox.shiprocket.in'));
  assert.equal(requests[0].url.pathname,'/v1/external/auth/login');
  assert.deepEqual(Object.fromEntries(requests[1].url.searchParams),{pickup_postcode:'501505',delivery_postcode:'110001',cod:'1',weight:'0.5'});
  assert.equal(requests[1].options.headers.Authorization,'Bearer fixture-token');

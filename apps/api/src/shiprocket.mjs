@@ -1,6 +1,6 @@
 import {DomainError} from './errors.mjs';
 
-const base='https://apiv2.shiprocket.in/v1/external';
+const base='https://api-sandbox.shiprocket.in/v1/external';
 const pinPattern=/^[1-9]\d{5}$/;
 
 export function createShiprocketLookup(env=process.env,request=fetch){
@@ -19,7 +19,7 @@ export function createShiprocketLookup(env=process.env,request=fetch){
    method:'POST',headers:{'Content-Type':'application/json'},
    body:JSON.stringify({email:env.SHIPROCKET_API_EMAIL,password:env.SHIPROCKET_API_PASSWORD})
   }).then(({ok,data})=>{
-   if(!ok||typeof data?.token!=='string'||!data.token)throw new DomainError(502,'Shiprocket sign-in failed. Check the dedicated API user credentials.');
+   if(!ok||typeof data?.token!=='string'||!data.token)throw new DomainError(502,'Shiprocket sign-in failed. Check the sandbox API user credentials.');
    return data.token;
   }).catch(error=>{cachedLogin=undefined;throw error;});
   cachedLogin={promise,expires:Date.now()+5*60*1000};

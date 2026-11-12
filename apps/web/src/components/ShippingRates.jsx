@@ -16,7 +16,7 @@ export default function ShippingRates({token}){
   finally{setBusy(false);}
  }
  return <section className="staff-panel" id="admin-shipping">
-  <h2>Shiprocket courier lookup</h2>
+  <h2>Shiprocket sandbox courier lookup</h2>
   <p>Check courier availability and estimated rates for a sample parcel. Shipment booking and checkout charges stay mocked.</p>
   <form className="m02-grid" onSubmit={check}>
    <label>Delivery PIN<input name="deliveryPin" inputMode="numeric" pattern="[1-9][0-9]{5}" maxLength={6} required/></label>
