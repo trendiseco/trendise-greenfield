@@ -1,0 +1,61 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {once} from 'node:events';
+import {createServer} from '../src/server.mjs';
+import {DurableCommerce,poolFor,migrate,seed} from '../src/database.mjs';
+test('PostgreSQL restart durability, two-process lock, rollback and database constraints',{skip:!process.env.TEST_DATABASE_URL},async()=>{
+ const pool=poolFor(process.env.TEST_DATABASE_URL);const schema='m02_test_'+crypto.randomUUID().replaceAll('-','');await pool.query(`CREATE SCHEMA ${schema}`);await pool.end();
+ const url=new URL(process.env.TEST_DATABASE_URL);url.searchParams.set('options',`-c search_path=${schema}`);const isolated=poolFor(url.toString());
+ try{
+ const pool=isolated;
+ await migrate(pool);await migrate(pool);await seed(pool);await seed(pool);const a=new DurableCommerce(pool),b=new DurableCommerce(pool);let sku;
+ await a.unit(()=>{sku=a.products[0].variants[0].sku;a.stock[sku]['store-hyd-01']=1;});
+ const key=crypto.randomUUID();const body={items:[{sku,qty:1}],paymentMethod:'Cash',idempotencyKey:key};
+ const result=await Promise.allSettled([a.unit(()=>a.completePosSale({role:'pos',locationId:'store-hyd-01'},body)),b.unit(()=>b.completePosSale({role:'pos',locationId:'store-hyd-01'},{...body,idempotencyKey:crypto.randomUUID()}))]);assert.equal(result.filter(x=>x.status==='fulfilled').length,1);
+ const restarted=new DurableCommerce(pool);await restarted.unit(()=>{assert.equal(restarted.stock[sku]['store-hyd-01'],0);assert.equal(restarted.sales.size,1);});
+ await assert.rejects(a.unit(()=>{a.stock[sku]['store-hyd-01']=-1;}));await b.unit(()=>assert.equal(b.stock[sku]['store-hyd-01'],0));
+ const first=result[0].status==='fulfilled'?a:b;const used=result[0].status==='fulfilled'?body:null;
+ if(used)await first.unit(async()=>assert.equal((await first.completePosSale({role:'pos',locationId:'store-hyd-01'},used)).sale.id,'POS-00001'));
+ const server=createServer(restarted);server.listen(0,'127.0.0.1');await once(server,'listening');
+ try{
+ const base=`http://127.0.0.1:${server.address().port}`;
+ const call=async(path,body,token,key)=>{const r=await fetch(base+path,{method:body?'POST':'GET',headers:{'content-type':'application/json',...(key?{'x-idempotency-key':key}:{}),...(token?{authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{})});const data=await r.json();assert.ok(r.ok,JSON.stringify(data));return data;};
+ await call('/api/auth/request-otp',{phone:'9876543210'});const customer=await call('/api/auth/verify-otp',{phone:'9876543210',otp:'123456'});
+ const revision=async()=> (await pool.query('SELECT updated_at::text AS value FROM commerce_state WHERE id=1')).rows[0].value;
+ const beforeReads=await revision();
+ const preflight=await fetch(base+'/api/admin/catalog',{method:'OPTIONS',headers:{origin:'http://localhost:3000','access-control-request-method':'GET','access-control-request-headers':'authorization'}});
+ assert.equal(preflight.status,204);
+ await call('/api/products');
+ await call('/api/orders',undefined,customer.token);
+ assert.equal(await revision(),beforeReads);
+ const paid=await call('/api/checkout/place',{items:[{sku,qty:1}],paymentMethod:'phonepe',acceptedPolicyVersion:restarted.version,address:{name:'Mock Shopper',phone:'9876543210',line1:'Mock road',city:'Hyderabad',state:'Telangana',pincode:'500001'}},customer.token,'persistent-payment');
+ assert.equal(paid.order.payment.provider,'MOCK_PHONEPE');
+ restarted.clock=()=>new Date(Date.parse(paid.order.placedAt)+12*60*60*1000);
+ const staff=await call('/api/auth/staff',{role:'warehouse',pin:'1234'});const pickingQueue=await call('/api/warehouse/orders',undefined,staff.token);
+ assert.equal(pickingQueue.orders[0].id,paid.orderId);
+ const pickingOrder=await call(`/api/warehouse/orders/${paid.orderId}`,undefined,staff.token);
+ assert.equal(pickingOrder.items[0].slug,'oxford-formal-shirt');
+ assert.ok(pickingOrder.allocations[0].locationName);
+ await call(`/api/warehouse/orders/${paid.orderId}/scan`,{pickCode:`LINE-${paid.orderId}-1`,barcode:restarted.product(sku).variant.barcode},staff.token);await call(`/api/warehouse/orders/${paid.orderId}/dispatch`,{},staff.token);await call(`/api/warehouse/orders/${paid.orderId}/delivered`,{},staff.token);await call(`/api/orders/${paid.orderId}/return`,{sku,reason:'fit',conditionConfirmed:true},customer.token);
+ const admin=await call('/api/auth/staff',{role:'admin',pin:'1234'}),superadmin=await call('/api/auth/staff',{role:'superadmin',pin:'1234'});
+ const queue=await call('/api/admin/orders?status=needs-review',undefined,admin.token);
+ assert.equal(queue.orders[0].id,paid.orderId);
+ const reviewed=await call(`/api/admin/orders/${paid.orderId}/review`,{caseKey:'return:'+sku,decision:'approved',note:'Approved for mock follow-up.'},admin.token);
+ assert.equal(reviewed.returnRequests[0].status,'approved');
+ const barcode=restarted.product(sku).variant.barcode;
+ await call(`/api/warehouse/orders/${paid.orderId}/return-receipt`,{sku,barcode,quantity:1},staff.token);
+ const inspected=await call(`/api/warehouse/orders/${paid.orderId}/return-inspection`,{sku,decision:'pass',reason:'Tags intact and garment unused.'},staff.token);
+ assert.equal(inspected.returnRequests[0].inspection.refund.amount,paid.order.quote.total);
+ const draft=await call('/api/admin/products',{name:'DB Mock Shirt',slug:'db-mock-shirt',category:'Shirts',fabric:'Cotton',fit:'Regular',description:'Mock persistence test',images:[{kind:'tryon',generated:true,color:'Blue',alt:'Mock overlay persistence asset',src:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='}],sizeChart:{unit:'cm',status:'sample',tolerance:1,notes:'Mock measurements',rows:[{size:'M',length:72,chestWidth:52,shoulder:44,sleeve:62}]},variants:[{sku:'DB-M',barcode:'DB-BAR-M',color:'Blue',size:'M',price:900}]},admin.token);
+ await call(`/api/admin/products/${draft.product.id}/submit`,{revision:1},admin.token);await call(`/api/admin/products/${draft.product.id}/decide`,{revision:1,action:'publish'},superadmin.token);
+ await call('/api/admin/inventory/receive',{sku:'DB-M',locationId:'warehouse-hyd',qty:5,key:'database-receipt',reason:'Mock stock'},superadmin.token);
+ const website=(await call('/api/admin/website',undefined,admin.token)).draft;website.hero.title='Persisted website';const savedSite=await call('/api/admin/website',website,admin.token);await call('/api/admin/website/publish',{revision:savedSite.revision},admin.token);
+ await call('/api/admin/offers',{code:'DBDEMO',name:'Database test',type:'fixed',value:100,minOrder:0,maxDiscount:0,maxUses:1,perCustomer:1,start:'',end:'',active:true,public:true},admin.token);
+ await call('/api/admin/rewards/customer',{phone:'9876543210',delta:100,key:'db-reward-adjustment',reason:'Mock DB verification'},admin.token);
+ const media=await call('/api/admin/media',{mime:'image/png',name:'DB mock image',data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='},admin.token);const imageResponse=await fetch(base+media.url);assert.equal(imageResponse.headers.get('content-type'),'image/png');assert.ok((await imageResponse.arrayBuffer()).byteLength>20);
+ const q=await call('/api/checkout/quote',{items:[{sku,qty:1}],coupon:'DBDEMO',redeemPoints:10},customer.token);assert.equal(q.pointsDiscount,10);assert.equal(q.couponDiscount,100);
+ const again=new DurableCommerce(pool);await again.unit(()=>{assert.equal(again.orders.get(paid.orderId).status,'delivered');assert.equal(again.orders.get(paid.orderId).returnRequests[0].inspection.refund.reference,inspected.returnRequests[0].inspection.refund.reference);assert.equal(again.ledger.filter(event=>event.reason==='RETURN_RESTOCK'&&event.ref===paid.orderId).length,1);assert.equal(again.available('DB-M'),5);assert.equal(again.product('DB-M').product.images[0].kind,'tryon');assert.equal(again.product('DB-M').product.sizeChart.rows[0].length,72);assert.equal(again.approvals.length,1);assert.equal(again.session(admin.token).role,'admin');assert.equal(again.website.site.hero.title,'Persisted website');assert.ok(again.website.coupons.some(c=>c.code==='DBDEMO'));assert.ok(again.customer({role:'customer',phone:'9876543210'}).points>=100);});
+ }finally{await new Promise(resolve=>server.close(resolve));}
+ }finally{await isolated.end();const cleanup=poolFor(process.env.TEST_DATABASE_URL);try{await cleanup.query(`DROP SCHEMA ${schema} CASCADE`);}finally{await cleanup.end();}}
+
+});

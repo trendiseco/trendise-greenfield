@@ -1,0 +1,4 @@
+PASS POS Cash · simulated sale, replay safety, store stock deducted once
+PASS POS UPI · simulated sale, replay safety, store stock deducted once
+PASS POS Card · simulated sale, replay safety, store stock deducted once
+PASS PIN lookup, five eligibility cases, and five split-payment rounding totals

@@ -1,0 +1,23 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {Commerce} from '../src/core.mjs';
+import {snapshot,restore} from '../src/database.mjs';
+const customer={role:'customer',phone:'9876543210'},admin={role:'admin',userId:'admin'};
+test('policy upgrades preserve the previous text; new orders capture consent and stale consent is rejected',async()=>{
+ const c=new Commerce(),legacy=structuredClone(snapshot(c));
+ legacy.version='TC-WEB-5-R2';legacy.policy={version:legacy.version,rulesVersion:2,title:'Previous terms',text:['Old store notice']};delete legacy.policyHistory;
+ restore(c,legacy);
+ assert.equal(c.policyHistory[legacy.version].text[0],'Old store notice');
+ assert.ok(c.policyHistory[legacy.version].sections.length>0);
+ assert.notEqual(c.version,legacy.version);assert.equal(c.policy.rulesVersion,4);
+ const sku=c.products[0].variants[0].sku;
+ const body={items:[{sku,qty:1}],paymentMethod:'cod',address:{name:'Demo Buyer',phone:customer.phone,line1:'10 Test Road',city:'Hyderabad',state:'Telangana',pincode:'500001'}};
+ await assert.rejects(c.placeOrder(customer,{...body,acceptedPolicyVersion:legacy.version},'policy-old'),{code:'TERMS_REQUIRED'});
+ const version=c.version;const receipt=await c.placeOrder(customer,{...body,acceptedPolicyVersion:version},'policy-new');
+ assert.deepEqual(receipt.order.termsAcceptance,{accepted:true,version,customerId:customer.phone,orderId:receipt.orderId,acceptedAt:receipt.order.acceptedAt});
+ const draft=await c.saveWebsite(admin,c.website.siteDraft);await c.publishWebsite(admin,{revision:draft.revision});
+ const restarted=new Commerce();restore(restarted,structuredClone(snapshot(c)));
+ assert.equal(restarted.orders.get(receipt.orderId).termsAcceptance.version,version);
+ assert.ok(restarted.policyHistory[version].sections.length>10);
+ assert.ok(restarted.policyHistory[restarted.version].effectiveDate);
+});

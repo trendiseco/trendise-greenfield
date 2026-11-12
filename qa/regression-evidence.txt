@@ -1,0 +1,123 @@
+# Standard suite
+
+> trendise-greenfield@0.1.0 test
+> npm run test -w @trendise/api
+
+
+> @trendise/api@0.1.0 test
+> node --test tests/*.test.mjs
+
+✔ admin queue and decisions enforce permissions and preserve order and stock (17.758125ms)
+✔ fresh demo catalogue uses unique barcodes per SKU (1.436458ms)
+✔ store sale atomically reduces customer-visible inventory (2.33925ms)
+✔ duplicate POS submission does not duplicate stock deduction (0.699041ms)
+✔ online checkout requires accepted current T&C and complete address (1.813417ms)
+✔ mock payment converts reservation once and creates warehouse order (10.392208ms)
+✔ warehouse rejects wrong pick code and barcode; dispatch blocked until full verification (0.800875ms)
+✔ customer account cannot access POS or warehouse actions (0.987583ms)
+✔ cannot oversell last store unit, even with simultaneous POS requests (0.967792ms)
+✔ idempotency key cannot be reused for a different financial request (1.026292ms)
+✔ store POS cannot sell inventory already reserved online at its location (0.565584ms)
+✔ campaign plays original, work, weekend, after hours and wraps to original (0.650708ms)
+✔ broken films are skipped; all broken returns poster fallback (0.059584ms)
+✔ all new campaign media and posters are bundled locally (3.803167ms)
+✔ HTTP: full mock customer -> warehouse -> POS and shared catalog stock (52.77ms)
+✔ catalog draft -> preview data -> submit -> independent approval -> public catalog (3.814833ms)
+✔ mandatory unique variant barcodes, permanent identities and revision conflicts (0.472125ms)
+✔ image type, size and alternative text validated (0.535458ms)
+✔ RBAC changes and disabled users revoke active session privileges (0.594875ms)
+✔ transfers preserve totals, reject oversell, replay safely and protect held stock (0.398167ms)
+✔ newly published product can receive shared mock stock with audited, idempotent receipt (0.414792ms)
+✔ atomic checkout validates terms and payment, handles all three methods, and is safe to retry (18.763042ms)
+✔ cancellation restores stock and coupon once, voids COD or refunds prepaid, and is owner-only (1.847875ms)
+✔ dispatch waits for cancellation deadline; returns use delivery timestamp and checklist; issues remain reportable (2.271084ms)
+✔ partial payment requires a distant PIN and splits the final discounted total (6.637167ms)
+✔ policy upgrades preserve the previous text; new orders capture consent and stale consent is rejected (14.815833ms)
+﹣ PostgreSQL restart durability, two-process lock, rollback and database constraints (0.288625ms) # SKIP
+✔ product coupon price respects minimum, cap, rounding and single best offer (1.124667ms)
+✔ seeded measurement charts are clearly sample data, one row per size, with garment-specific dimensions (1.82325ms)
+✔ measurement unit conversion, null cells and sample missing-size handling (0.601084ms)
+✔ chart rejects invalid units, negative/NaN values, duplicate and unknown sizes and incomplete verified rows (1.022125ms)
+✔ actual chart edits persist through draft, independent approval and restart without publishing a draft early (2.832792ms)
+✔ removing a chart stays removed after restore and unknown products do not receive invented measurements (0.440791ms)
+✔ portrait, landscape and wide photos stay contained without stretching (0.605625ms)
+✔ landmark placement adapts to manually marked narrow, broad and lower-body regions (0.553875ms)
+✔ color-specific cutouts preserve approval privacy and restart persistence (5.212958ms)
+✔ warehouse immediately sees placed orders and verifies compact pick codes against physical label values (12.065833ms)
+✔ warehouse inventory lists all published variants, location balances and active checkout holds (0.860166ms)
+✔ website draft is private until published, revision conflicts and unsafe links rejected (11.300833ms)
+✔ coupon percent/fixed/cap/minimum/date/revision validation and POS isolation (1.258042ms)
+✔ coupon holds prevent simultaneous last use; expiration releases a hold (0.816292ms)
+✔ birthday month in India, one annual redemption, immutable DOB and idempotent payment (1.352125ms)
+✔ points earn once, hold against parallel checkout, cannot overspend or be adjusted out of a hold (0.934166ms)
+✔ points percentage cap and coupon combination use net order subtotal (0.453792ms)
+✔ admin adjustments audited, permission guarded, cannot go negative, replay safe (0.678833ms)
+✔ website snapshot survives restart and missing old state is upgraded without replacing orders (0.629542ms)
+✔ published website visibility and inactive variants protect direct checkout; new variants keep existing identities (0.896ms)
+✔ media validates contents and customer ownership, birthday paused flag reflected (0.568459ms)
+✔ phone normalization cannot create separate reward identities for country-code formats (0.278959ms)
+ℹ tests 49
+ℹ suites 0
+ℹ pass 48
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 128.273042
+
+# PostgreSQL integration suite
+
+> trendise-greenfield@0.1.0 test:db
+> node --env-file=.env --test apps/api/tests/postgres.test.mjs
+
+✔ PostgreSQL restart durability, two-process lock, rollback and database constraints (1961.102292ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2017.678916
+
+# Web build
+
+> trendise-greenfield@0.1.0 build
+> npm run build -w @trendise/web
+
+
+> @trendise/web@0.1.0 build
+> next build
+
+▲ Next.js 16.4.5 (Turbopack)
+✓ Running next.config.mjs took 9ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 286ms
+  Running TypeScript ...
+  Finished TypeScript in 1ms ...
+  Collecting page data using 11 workers ...
+  Generating static pages using 11 workers (0/12) ...
+  Generating static pages using 11 workers (3/12)
+  Generating static pages using 11 workers (6/12)
+  Generating static pages using 11 workers (9/12)
+✓ Generating static pages using 11 workers (12/12) in 122ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ○ /account
+├ ○ /admin
+├ ○ /cart
+├ ○ /checkout
+├ ○ /orders
+├ ○ /pos
+├ ƒ /product/[slug]
+├ ○ /shop
+├ ○ /terms
+└ ○ /warehouse
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand

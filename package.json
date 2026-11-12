@@ -1,0 +1,21 @@
+{
+  "name": "trendise-greenfield",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:api": "npm run dev -w @trendise/api",
+    "dev:web": "npm run dev -w @trendise/web",
+    "test": "npm run test -w @trendise/api",
+    "build": "npm run build -w @trendise/web",
+    "db:migrate": "node --env-file=.env scripts/db.mjs migrate",
+    "db:seed": "node --env-file=.env scripts/db.mjs seed",
+    "test:db": "node --env-file=.env --test apps/api/tests/postgres.test.mjs"
+  },
+  "engines": {
+    "node": ">=20.11.0"
+  }
+}

@@ -1,0 +1,15 @@
+# M02 Development architecture
+
+Next.js 16.4.5 and React preserve M01 customer, POS and warehouse routes. The Node API implements catalog, authorization, orders, stock and mock providers. PostgreSQL 17 persists the independent greenfield domain.
+
+Every durable API request is serialized within its API process and takes a PostgreSQL row lock on commerce_state, reloads current state, runs domain rules, rebuilds constrained relational projections and commits state and projections atomically. All API instances use this same lock. Responses are buffered until commit; domain errors and database failures roll back. This coarse transaction boundary is intended for a small local development dataset, not a claim of production scalability. Sessions and idempotency are durable too. Read requests also acquire the lock so reservation expiry and session changes remain coherent.
+
+The migration defines products, variants, locations, inventory, reservations, orders, pos_sales, staff_roles, staff_users, catalog_drafts, approval_history, stock_ledger, audit_events and idempotency_records. commerce_state stores the aggregate checkpoint. Projection tables are read-only for operators. Images are embedded data URLs in product/draft documents; no third-party uploads or URL fetches occur.
+
+Published products and private drafts are separate. Draft revisions protect against lost edits. Submission records the author; only a different Super Admin may decide a pending revision. Reject returns the revision to draft. Every published SKU/barcode stays stable to preserve downstream warehouse and order references. New variants are introduced as a new product in this milestone. Inventory starts at zero for new products and is received by Super Admin with an audited reason.
+
+Online availability subtracts active reservations from eligible locations. POS uses its staff-assigned store balance. Transfers cannot use reserved units. Payment confirmation, POS, receipts and transfers update stock and ledger within the same transaction and carry durable idempotency. Warehouse scans and dispatch do not deduct inventory a second time. Product availability remains independent of private catalog edits.
+
+Authorization checks role permissions for catalog edits/submissions, staff management, approval, inventory operations, POS and warehouse mutation. Super Admin has fixed full authority; custom roles cannot grant approval or staff-management authority. Existing sessions reload user activation, role and location on each request. Production authentication, MFA, expiring sessions and secure cookie deployment remain beyond M02.
+
+All external business providers remain absent: MOCK_RAZORPAY, MOCK_SHIPROCKET, MOCK_OTP, MOCK_MAP and MOCK_TRYON. Environment guards refuse production and live integration configuration. No later milestone or UAT integration is authorized by this delivery.

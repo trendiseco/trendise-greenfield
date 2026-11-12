@@ -1,0 +1,20 @@
+✔ product coupon price respects minimum, cap, rounding and single best offer (0.693708ms)
+✔ website draft is private until published, revision conflicts and unsafe links rejected (11.280792ms)
+✔ coupon percent/fixed/cap/minimum/date/revision validation and POS isolation (1.114959ms)
+✔ coupon holds prevent simultaneous last use; expiration releases a hold (0.795625ms)
+✔ birthday month in India, one annual redemption, immutable DOB and idempotent payment (1.0915ms)
+✔ points earn once, hold against parallel checkout, cannot overspend or be adjusted out of a hold (0.828125ms)
+✔ points percentage cap and coupon combination use net order subtotal (0.475042ms)
+✔ admin adjustments audited, permission guarded, cannot go negative, replay safe (0.627875ms)
+✔ website snapshot survives restart and missing old state is upgraded without replacing orders (0.60425ms)
+✔ published website visibility and inactive variants protect direct checkout; new variants keep existing identities (0.861834ms)
+✔ media validates contents and customer ownership, birthday paused flag reflected (0.591333ms)
+✔ phone normalization cannot create separate reward identities for country-code formats (0.291292ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 87.406459

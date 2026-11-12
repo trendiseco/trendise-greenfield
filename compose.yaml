@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: trendise
+      POSTGRES_PASSWORD: trendise_dev_only
+      POSTGRES_DB: trendise_dev
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - trendise_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trendise -d trendise_dev"]
+      interval: 3s
+      retries: 20
+volumes:
+  trendise_dev:

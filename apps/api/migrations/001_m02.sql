@@ -1,0 +1,15 @@
+CREATE TABLE IF NOT EXISTS commerce_state (id integer PRIMARY KEY CHECK(id=1), payload jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE products (id text PRIMARY KEY, slug text NOT NULL UNIQUE, document jsonb NOT NULL);
+CREATE TABLE variants (sku text PRIMARY KEY, product_id text NOT NULL REFERENCES products(id), barcode text NOT NULL UNIQUE CHECK(length(trim(barcode))>0), price numeric(12,2) NOT NULL CHECK(price>0), document jsonb NOT NULL);
+CREATE TABLE locations (id text PRIMARY KEY, document jsonb NOT NULL);
+CREATE TABLE inventory (sku text REFERENCES variants(sku), location_id text REFERENCES locations(id), quantity integer NOT NULL CHECK(quantity>=0), PRIMARY KEY(sku,location_id));
+CREATE TABLE reservations (id text PRIMARY KEY, document jsonb NOT NULL);
+CREATE TABLE orders (id text PRIMARY KEY, document jsonb NOT NULL);
+CREATE TABLE pos_sales (id text PRIMARY KEY, document jsonb NOT NULL);
+CREATE TABLE staff_roles (name text PRIMARY KEY, permissions jsonb NOT NULL);
+CREATE TABLE staff_users (id text PRIMARY KEY, role text NOT NULL REFERENCES staff_roles(name), document jsonb NOT NULL);
+CREATE TABLE catalog_drafts (id text PRIMARY KEY, revision integer NOT NULL CHECK(revision>0), status text NOT NULL CHECK(status IN ('draft','pending','published')), document jsonb NOT NULL);
+CREATE TABLE approval_history (sequence bigint PRIMARY KEY, document jsonb NOT NULL);
+CREATE TABLE stock_ledger (id text PRIMARY KEY, document jsonb NOT NULL);
+CREATE TABLE audit_events (sequence bigint PRIMARY KEY, document jsonb NOT NULL);
+CREATE TABLE idempotency_records (key text PRIMARY KEY, document jsonb NOT NULL);
