@@ -19,6 +19,7 @@ const money = value => Math.round(value*100)/100;
 export class Commerce {
   constructor() {
     this.website=websiteState();
+    this.additionalCategories=[];
     this.products=clone(initialProducts).map(upgradeSizeChart);
     this.drafts={}; this.approvals=[];
     this.roles={admin:['catalog.edit','catalog.submit','inventory.read','pos.sell','warehouse.fulfill','website.manage','offers.manage','rewards.manage'],superadmin:['*'],pos:['pos.sell'],warehouse:['warehouse.fulfill']};
@@ -253,9 +254,26 @@ export class Commerce {
     if(!this.roles[session.role]?.some(p=>p==='*'||p===permission))throw new DomainError(403,'Permission required: '+permission);
   }
   event(session,type,id){this.audit.push({type,id,actor:session.userId||session.role,at:new Date().toISOString()});}
+  catalogCategories(){
+    return [...new Set([
+      ...this.products.map(product=>product.category),
+      ...Object.values(this.drafts).map(draft=>draft.product.category),
+      ...this.additionalCategories
+    ])].sort((a,b)=>a.localeCompare(b));
+  }
+  async addCatalogCategory(session,input){return this.serialized(()=>{
+    if(session.role!=='superadmin')throw new DomainError(403,'Super Admin access required');
+    const name=typeof input?.name==='string'?input.name.trim().replace(/\s+/g,' '):'';
+    if(!name||name.length>80)throw new DomainError(400,'Enter a category name of up to 80 characters.');
+    if(this.catalogCategories().some(category=>category.toLowerCase()===name.toLowerCase()))throw new DomainError(409,'This category already exists.');
+    this.additionalCategories.push(name);
+    this.event(session,'CATEGORY_CREATED',name);
+    return this.catalogCategories();
+  });}
   validateProduct(input,id) {
     const p=clone(input);
     for(const field of ['name','slug','category','description','fabric','fit'])if(typeof p[field]!=='string'||!p[field].trim()||p[field].length>4000)throw new DomainError(400,'Required product field: '+field);
+    if(!this.catalogCategories().includes(p.category))throw new DomainError(400,'Select a category from the Super Admin category list.');
     if(!/^[a-z0-9-]{1,100}$/.test(p.slug))throw new DomainError(400,'Slug must contain lowercase letters, numbers and hyphens');
     const others=[...this.products.filter(x=>x.id!==id),...Object.values(this.drafts).filter(x=>x.product.id!==id).map(x=>x.product)];
     if(others.some(x=>x.slug===p.slug))throw new DomainError(409,'Product slug already used');

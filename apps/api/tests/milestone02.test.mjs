@@ -39,3 +39,19 @@ test('newly published product can receive shared mock stock with audited, idempo
  const c=new Commerce();const d=await c.saveDraft(admin,product());await c.submitDraft(admin,d.product.id,1);await c.decideDraft(superadmin,d.product.id,{revision:1,action:'publish'});
  const body={sku:'MOCK-M',locationId:'warehouse-hyd',qty:8,key:'receipt-test',reason:'Mock opening stock'};await c.receiveStock(superadmin,body);await c.receiveStock(superadmin,body);assert.equal(c.available('MOCK-M'),8);assert.equal(c.ledger.length,1);await assert.rejects(c.receiveStock(admin,body),{status:403});
 });
+
+test('Super Admin creates categories for product drafts and legacy products remain selectable',async()=>{
+ const core=new Commerce();
+ const admin={role:'admin',userId:'admin'},superadmin={role:'superadmin',userId:'superadmin'};
+ assert.ok(core.catalogCategories().includes('Shirts'));
+ await assert.rejects(core.addCatalogCategory(admin,{name:'Jackets'}),{status:403});
+ await assert.rejects(core.saveDraft(admin,{...product(),category:'Jackets'}),{status:400});
+ assert.ok((await core.addCatalogCategory(superadmin,{name:' Jackets '})).includes('Jackets'));
+ await assert.rejects(core.addCatalogCategory(superadmin,{name:'jackets'}),{status:409});
+ const draft=await core.saveDraft(admin,{...product(),category:'Jackets',variants:[{...product().variants[0],barcode:'0012345678905'}]});
+ assert.equal(draft.product.variants[0].barcode,'0012345678905');
+ const restored=new Commerce();
+ const {snapshot,restore}=await import('../src/database.mjs');
+ restore(restored,structuredClone(snapshot(core)));
+ assert.ok(restored.catalogCategories().includes('Jackets'));
+});

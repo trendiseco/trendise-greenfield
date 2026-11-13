@@ -111,7 +111,8 @@ const handle=async (req,res)=>{
       if(is('GET','/api/admin/rewards')){core.permit(staff,'rewards.manage');core.ensureWebsite();return respond(res,200,{rules:core.website.rules,customers:Object.values(core.website.customers),ledger:core.website.rewardLedger.slice(-100).reverse()});}
       if(is('POST','/api/admin/rewards'))return respond(res,200,await core.saveRewardRules(staff,await bodyOf(req)));
       if(is('POST','/api/admin/rewards/customer'))return respond(res,200,await core.adjustCustomer(staff,await bodyOf(req)));
-      if(is('GET','/api/admin/catalog')){core.permit(staff,'catalog.edit');return respond(res,200,{products:core.products,drafts:core.drafts,approvals:core.approvals});}
+      if(is('GET','/api/admin/catalog')){core.permit(staff,'catalog.edit');return respond(res,200,{products:core.products,drafts:core.drafts,approvals:core.approvals,categories:core.catalogCategories()});}
+      if(is('POST','/api/admin/categories'))return respond(res,201,{categories:await core.addCatalogCategory(staff,await bodyOf(req))});
       if(is('POST','/api/admin/products'))return respond(res,200,await core.saveDraft(staff,await bodyOf(req)));
       const action=path.match(/^\/api\/admin\/products\/([^/]+)\/(submit|decide)$/);
       if(req.method==='POST'&&action){const b=await bodyOf(req);return respond(res,200,action[2]==='submit'?await core.submitDraft(staff,action[1],b.revision):await core.decideDraft(staff,action[1],b));}
