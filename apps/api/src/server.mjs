@@ -105,6 +105,8 @@ const handle=async (req,res)=>{
     }
     if(path.startsWith('/api/admin/')){
       const staff=core.session(tokenFrom(req));
+      if(is('GET','/api/admin/pos-terms'))return respond(res,200,core.posTermsSettings(staff));
+      if(is('POST','/api/admin/pos-terms'))return respond(res,200,core.savePosTerms(staff,(await bodyOf(req))?.text));
       if(is('GET','/api/admin/pos-promotions'))return respond(res,200,core.posPromotionList(staff));
       if(is('POST','/api/admin/pos-promotions'))return respond(res,200,core.savePosPromotion(staff,await bodyOf(req)));
       if(is('GET','/api/admin/orders'))return respond(res,200,core.adminOrderList(staff,url.searchParams));

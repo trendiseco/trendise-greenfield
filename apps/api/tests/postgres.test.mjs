@@ -54,8 +54,14 @@ test('PostgreSQL restart durability, two-process lock, rollback and database con
  const cashier=await call('/api/auth/staff',{role:'pos',pin:'1234'});
  const posInventory=await call('/api/pos/inventory',undefined,cashier.token);
  assert.equal(posInventory.products.find(product=>product.id===draft.product.id).variants[0].salePrice,700);
+ const terms='Keep this bill.\n\nShow the original tags for a return.';
+ await call('/api/admin/pos-terms',{text:terms},superadmin.token);
+ const denied=await fetch(base+'/api/admin/pos-terms',{headers:{authorization:'Bearer '+admin.token}});
+ assert.equal(denied.status,403);
  const {sale:posBill}=await call('/api/pos/sales',{items:[{sku:'DB-M',qty:2}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'Card',expectedTotal:1400},cashier.token,'db-pos-bill');
  assert.equal(posBill.quote.gst,66.67);
+ assert.equal(posBill.terms,terms);
+ await call('/api/admin/pos-terms',{text:'Updated store receipt terms.'},superadmin.token);
  const history=await call('/api/pos/customers/search',{phone:'+91 9876543210'},admin.token);
  assert.equal(history.sales[0].id,posBill.id);
  assert.equal(history.orders[0].id,paid.orderId);
@@ -64,6 +70,8 @@ test('PostgreSQL restart durability, two-process lock, rollback and database con
  const posReloaded=new DurableCommerce(pool);
  await posReloaded.unit(()=>{
   assert.equal(posReloaded.sales.get(posBill.id).returns[0].id,returned.return.id);
+  assert.equal(posReloaded.sales.get(posBill.id).terms,terms);
+  assert.equal(posReloaded.posTermsSettings({role:'superadmin'}).text,'Updated store receipt terms.');
   assert.equal(posReloaded.stock['DB-M']['warehouse-hyd'],4);
   assert.equal(posReloaded.stock['DB-M']['store-hyd-01'],0);
   assert.equal(posReloaded.posPromotions['DB-M'].value,700);

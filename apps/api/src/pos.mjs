@@ -212,7 +212,23 @@ export const posMethods = {
     });
   },
 
+  posTermsSettings(session) {
+    if (session.role !== 'superadmin') throw new DomainError(403, 'Super Admin required');
+    const terms = this.posReceiptTerms();
+    return {text: Array.isArray(terms) ? terms.join('\n') : terms};
+  },
+
+  savePosTerms(session, text) {
+    if (session.role !== 'superadmin') throw new DomainError(403, 'Super Admin required');
+    if (typeof text !== 'string' || !text.trim() || text.length > 6000) {
+      throw new DomainError(400, 'Enter receipt terms of up to 6,000 characters');
+    }
+    this.posTerms = text;
+    this.event(session, 'POS_TERMS_UPDATED', 'store-pos');
+    return this.posTermsSettings(session);
+  },
+
   posReceiptTerms() {
-    return receiptTerms;
+    return this.posTerms ?? [...receiptTerms];
   }
 };

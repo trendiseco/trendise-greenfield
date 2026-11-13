@@ -22,6 +22,7 @@ export class Commerce {
     this.website=websiteState();
     this.additionalCategories=[];
     this.posPromotions={};
+    this.posTerms=null;
     this.products=clone(initialProducts).map(upgradeSizeChart);
     this.drafts={}; this.approvals=[];
     this.roles={admin:['catalog.edit','catalog.submit','inventory.read','pos.sell','warehouse.fulfill','website.manage','offers.manage','rewards.manage'],superadmin:['*'],pos:['pos.sell'],warehouse:['warehouse.fulfill']};

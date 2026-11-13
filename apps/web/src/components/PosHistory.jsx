@@ -16,7 +16,7 @@ export function PosReceipt({sale,onClose}) {
    {quote.gstRate&&<><dt>Taxable value</dt><dd>{cash(quote.taxable)}</dd><dt>Included GST ({quote.gstRate}%)</dt><dd>{cash(quote.gst)}</dd></>}
    <dt>Total</dt><dd>{cash(quote.total)}</dd><dt>Payment</dt><dd>{sale.payment.method} · simulated</dd>
   </dl>
-  <h3>Terms & conditions</h3><ul>{(sale.terms||['Keep the original bill and product tags for return verification.','Development receipt. Payment and refund records are simulated.']).map(term=><li key={term}>{term}</li>)}</ul>
+  <h3>Terms & conditions</h3>{typeof sale.terms==='string'?<p className="pos-receipt-terms">{sale.terms}</p>:<ul>{(sale.terms||['Keep the original bill and product tags for return verification.','Development receipt. Payment and refund records are simulated.']).map(term=><li key={term}>{term}</li>)}</ul>}
   <ReturnEntries sale={sale}/>
  </section>;
 }

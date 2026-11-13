@@ -14,6 +14,7 @@
 .pos-receipt { margin-top: 20px; }
 .pos-receipt dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; }
 .pos-receipt dd { margin: 0; }
+.pos-receipt-terms { white-space: pre-wrap; overflow-wrap: anywhere; }
 .pos-register-bottom input { padding: 10px; }
 @media (max-width: 560px) {
   .pos-scan-panel .scanner-row, .pos-history .scanner-row { align-items: stretch; }

@@ -7,6 +7,7 @@ import SizeChart from '../../components/SizeChart';
 import AdminDashboard from '../../components/AdminDashboard';
 import ShippingRates from '../../components/ShippingRates';
 import PosHistory from '../../components/PosHistory';
+import PosTerms from '../../components/PosTerms';
 import PosPromotions from '../../components/PosPromotions';
 import AdminOrders from '../../components/AdminOrders';
 import WebsiteAdmin from '../../components/WebsiteAdmin';
@@ -20,7 +21,7 @@ const managementTabs=[
  ['admin-dashboard','Dashboard'],['admin-orders','Orders & returns'],
  ['admin-customers','Customer search'],['admin-products','Products'],['admin-shipping','Shipping'],['website-controls','Website & offers'],['admin-inventory','Inventory']
 ];
-const governanceTabs=[['admin-pos-promotions','Store POS promotions'],['admin-categories','Categories'],['admin-approvals','Approvals'],['admin-staff','Staff & roles']];
+const governanceTabs=[['admin-pos-promotions','Store POS promotions'],['admin-pos-terms','Store POS Terms & Conditions'],['admin-categories','Categories'],['admin-approvals','Approvals'],['admin-staff','Staff & roles']];
 
 export default function Admin(){
  const [requestedSection,openSection]=useStaffSection('admin-dashboard');
@@ -60,6 +61,7 @@ export default function Admin(){
  <StaffTabs label="Management sections" tabs={tabs} active={section} onChange={openSection}/>
  <div className="operations-pane" hidden={section!=='admin-dashboard'}>{summary?.status?<AdminDashboard data={summary} onOpenOrders={openOrders}/>:<p role="status">Loading dashboard…</p>}</div>
  {section==='admin-customers'&&<PosHistory token={token}/>}
+ {access&&section==='admin-pos-terms'&&<PosTerms key={token} token={token}/>}
  {access&&section==='admin-pos-promotions'&&<PosPromotions token={token}/>}
  <div className="operations-pane" hidden={section!=='admin-orders'}><AdminOrders key={token+orderFilter} token={token} filter={isOrderList?orderFilter:'all'} onFilter={openOrders} onReviewed={()=>api('/api/admin/summary',{token}).then(S).catch(()=>{})}/></div>
  <div className="operations-pane" hidden={section!=='admin-shipping'}><ShippingRates token={token}/></div>
