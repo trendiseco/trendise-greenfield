@@ -10,9 +10,12 @@ export default function AdminDashboard({data,onOpenOrders}){
  const inspections=data.inspections??{passed:0,failed:0,quarantinedUnits:0,refunds:0};
  const peak=Math.max(1,...days.map(d=>d.orders));
  return <section className="staff-panel admin-dashboard" id="admin-dashboard" aria-labelledby="admin-dashboard-title">
-  <div className="panel-heading"><div><h2 id="admin-dashboard-title">Operations dashboard</h2><p className="hint">Website orders and shared stock · Development figures only</p></div></div>
+  <div className="panel-heading"><div><h2 id="admin-dashboard-title">Operations dashboard</h2><p className="hint">Website orders and Store POS sales · Development figures only</p></div></div>
   <div className="admin-dashboard-content">
-   <section className="admin-return-summary" aria-labelledby="admin-return-heading">
+   {data.pos&&<section><h3>Store POS</h3><div className="metric-row">
+    {Object.entries({'Bills':data.pos.bills,'Customers':data.pos.customers,'Gross sales':cash(data.pos.gross),'Mock refunds':cash(data.pos.refunded),'Net sales':cash(data.pos.net)}).map(([label,value])=><div className="metric" key={label}><span>{label}</span><strong>{value}</strong></div>)}
+   </div></section>}
+   <section className="admin-return-summary"  aria-labelledby="admin-return-heading">
     <div><h3 id="admin-return-heading">Returns</h3><button className="small-outline" onClick={()=>onOpenOrders('returns')}>Open returns ↗</button></div>
     <dl>{[['Total requests',returnTotal],['Awaiting review',requests.return.requested],['Approved, awaiting receipt',requests.return.approved-received],['Awaiting inspection',received-inspections.passed-inspections.failed],['Inspection passed',inspections.passed],['Inspection failed',inspections.failed],['Quarantined units',inspections.quarantinedUnits],['Mock return refunds',cash(inspections.refunds)],['Declined',requests.return.rejected]].map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
    </section>

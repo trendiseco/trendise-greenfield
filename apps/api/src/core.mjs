@@ -21,6 +21,7 @@ export class Commerce {
   constructor() {
     this.website=websiteState();
     this.additionalCategories=[];
+    this.hiddenCategories=[];
     this.posPromotions={};
     this.posTerms=null;
     this.products=clone(initialProducts).map(upgradeSizeChart);
@@ -67,7 +68,7 @@ export class Commerce {
     for(const r of this.reservations.values()) if(r.status==='active'&&r.expiresAt<=now)r.status='expired';
   }
   listing(channel='online') {
-    return this.products.filter(product=>channel==='store'||product.websiteVisible!==false).map(product=>({
+    return this.products.filter(product=>!this.hiddenCategories.includes(product.category)&&(channel==='store'||product.websiteVisible!==false)).map(product=>({
       ...product,
       variants:product.variants.map(({posPrice,...variant})=>({
         ...variant, ...(channel==='store'&&posPrice!=null?{posPrice}:{}), available:this.available(variant.sku)
@@ -121,6 +122,7 @@ export class Commerce {
     if(!reservation||reservation.phone!==session.phone)throw new DomainError(404,'Checkout reservation not found');
     if(reservation.status!=='active'||reservation.expiresAt<=Date.now())throw new DomainError(409,'Reservation expired or already processed','RESERVATION_EXPIRED');
     if(reservation.acceptedPolicyVersion!==this.version)throw new DomainError(400,'Terms changed. Review and accept the current version.','TERMS_REQUIRED');
+    if(reservation.quote.items.some(item=>this.hiddenCategories.includes(this.product(item.sku).product.category)))throw new DomainError(409,'A category on this bill is hidden. Start checkout again.');
     if((reservation.quote.redeemPoints||0)>this.customer(session).points)throw new DomainError(409,'Points balance changed; retry checkout');
     for(const allocation of reservation.allocations){if((this.stock[allocation.sku]?.[allocation.locationId]??0)<allocation.qty)throw new DomainError(409,'Inventory changed; please retry checkout');}
     for(const allocation of reservation.allocations)this.decrement(allocation,'MOCK_ONLINE_PAYMENT',reservationId);
@@ -154,6 +156,7 @@ export class Commerce {
     const known=this.getIdempotent(eventKey,fingerprint);if(known)return known;
     const items=this.normalizeLines(body.items);
     if(body.coupon)throw new DomainError(400,'Store promotions are set by Super Admin and apply automatically','INVALID_COUPON');
+    if(items.some(item=>this.hiddenCategories.includes(this.product(item.sku).product.category)))throw new DomainError(409,'Remove products in hidden categories before saving this bill.');
     const quote=this.posQuote(items);
     if(body.expectedTotal!==undefined&&quote.total!==body.expectedTotal)throw new DomainError(409,'Store prices changed. Refresh the bill before saving.');
     const allocations=this.allocations(items,'store',location.id);
@@ -284,6 +287,20 @@ export class Commerce {
     this.additionalCategories.push(name);
     this.event(session,'CATEGORY_CREATED',name);
     return this.catalogCategories();
+  });}
+  async updateCatalogCategory(session,{name,action}){return this.serialized(()=>{
+    if(session.role!=='superadmin')throw new DomainError(403,'Super Admin access required');
+    if(!this.catalogCategories().includes(name))throw new DomainError(404,'Category not found');
+    if(action==='remove'){
+      if(this.products.some(product=>product.category===name)||Object.values(this.drafts).some(draft=>draft.product.category===name)){
+        throw new DomainError(409,'Move products and drafts to another category before removing this category.');
+      }
+      this.additionalCategories=this.additionalCategories.filter(category=>category!==name);
+    }else if(!['hide','show'].includes(action))throw new DomainError(400,'Choose Hide, Show or Remove');
+    this.hiddenCategories=this.hiddenCategories.filter(category=>category!==name);
+    if(action==='hide')this.hiddenCategories.push(name);
+    this.event(session,'CATEGORY_'+action.toUpperCase(),name);
+    return {categories:this.catalogCategories(),hiddenCategories:this.hiddenCategories};
   });}
   validateProduct(input,id) {
     const p=clone(input);

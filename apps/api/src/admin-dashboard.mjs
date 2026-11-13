@@ -1,9 +1,13 @@
+import {periodStart} from './pos.mjs';
 import {orderCases,orderStatusLabels} from '../../../shared/admin-orders.mjs';
 import {indiaDate} from './website.mjs';
 
 const money=n=>Math.round(n*100)/100;
-export function adminDashboard(core){
- const orders=[...core.orders.values()],now=core.orderNow();
+export function adminDashboard(core,period){
+ const now=core.orderNow();
+ const start=period?periodStart(period,now):-Infinity;
+ const inPeriod=at=>!period||(Date.parse(at)>=start&&Date.parse(at)<=now);
+ const orders=[...core.orders.values()].filter(order=>inPeriod(order.placedAt));
  const live=orders.filter(o=>o.status!=='cancelled');
  const status={confirmed:0,picking:0,shipped:0,delivered:0,cancelled:0};
  const requests={return:{requested:0,approved:0,rejected:0},issue:{requested:0,approved:0,rejected:0}};

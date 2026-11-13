@@ -47,6 +47,17 @@ export default function Pos(){
  const [method,setMethod]=useState('UPI'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[receipt,setReceipt]=useState(null),[search,setSearch]=useState(''),[tab,setTab]=useState('billing');
  const [scanStatus,setScanStatus]=useState('');
  const scanner=useRef(null),attempt=useRef(null),saving=useRef(false);
+ useEffect(()=>{
+  if(!token)return;
+  const controller=new AbortController();
+  const update=()=>api('/api/pos/inventory',{token,signal:controller.signal}).then(data=>{
+   if(!controller.signal.aborted)setInventory(data);
+  }).catch(error=>{if(!controller.signal.aborted)setError(error.message);});
+  const onStorage=event=>{if(['trd_categories_updated','trd_pos_prices_updated'].includes(event.key))update();};
+  window.addEventListener('focus',update);
+  window.addEventListener('storage',onStorage);
+  return ()=>{controller.abort();window.removeEventListener('focus',update);window.removeEventListener('storage',onStorage);};
+ },[token]);
  const all=useMemo(()=>inventory?.products.flatMap(product=>product.variants.map(variant=>({...variant,product})))||[],[inventory]);
  const refresh=async(t=token)=>{try{setInventory(await api('/api/pos/inventory',{token:t}));}catch(error){setError(error.message);}};
  useEffect(()=>{const t=sessionStorage.getItem('trd_pos_token');if(t){setToken(t);refresh(t);}},[]);

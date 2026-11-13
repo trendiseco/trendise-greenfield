@@ -8,6 +8,7 @@
     "start": "next start -p 3000"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "jsbarcode": "3.12.1",
     "next": "16.4.5",
     "qrcode.react": "4.2.0",

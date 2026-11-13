@@ -81,3 +81,33 @@ test('sample bills are repeat-safe and report by India calendar year without cha
  assert.equal(app.posDashboard(cashier,'year','2025').sales.length,2);
  assert.equal(app.posDashboard(cashier,'year','2026').sales.length,3);
 });
+
+test('category visibility, scoped promotions and Excel prices control new sales',async()=>{
+ const app=new Commerce();
+ const superadmin={role:'superadmin'},admin={role:'admin'},cashier={role:'pos',locationId:'store-hyd-01'};
+ const [product,other]=app.products;
+ const [variant]=product.variants;
+ await app.addCatalogCategory(superadmin,{name:'Jackets'});
+ await app.updateCatalogCategory(superadmin,{name:'Jackets',action:'remove'});
+ assert.ok(!app.catalogCategories().includes('Jackets'));
+ await assert.rejects(app.updateCatalogCategory(superadmin,{name:product.category,action:'remove'}),{status:409});
+ await app.updateCatalogCategory(superadmin,{name:product.category,action:'hide'});
+ assert.ok(!app.listing().some(entry=>entry.category===product.category));
+ assert.ok(!app.posInventory(cashier).products.some(entry=>entry.category===product.category));
+ const body={items:[{sku:variant.sku,qty:1}],customer:{name:'Example',phone:'9999900001'},paymentMethod:'Cash',idempotencyKey:'bulk-pricing-test'};
+ await assert.rejects(app.completePosSale(cashier,body),{status:409});
+ await app.updateCatalogCategory(superadmin,{name:product.category,action:'show'});
+ app.savePosPromotion(superadmin,{scope:'all',type:'percent',value:10});
+ app.savePosPromotion(superadmin,{scope:'product',target:product.id,type:'percent',value:15});
+ app.savePosPromotion(superadmin,{scope:'category',target:other.category,type:'percent',value:20});
+ assert.equal(app.posPromotions[variant.sku].value,20);
+ const row={sku:variant.sku,barcode:variant.barcode,price:999};
+ assert.throws(()=>app.importPosPrices(admin,[row]),{status:403});
+ assert.throws(()=>app.importPosPrices(superadmin,[row,{...row,barcode:'wrong'}]),{status:400});
+ assert.equal(variant.posPrice,undefined);
+ assert.equal(app.importPosPrices(superadmin,[row]).updated,1);
+ assert.equal(app.posInventory(cashier).products[0].variants[0].salePrice,999);
+ assert.equal(app.listing()[0].variants[0].price,1499);
+ assert.equal((await app.completePosSale(cashier,body)).sale.quote.total,999);
+ assert.equal(app.posDashboard(admin,'fiveYears',null,true).gross,999);
+});

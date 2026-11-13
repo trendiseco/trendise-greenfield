@@ -3,7 +3,7 @@ import {DomainError} from './errors.mjs';
 
 const cents = value => Math.round(value * 100);
 const rupees = value => value / 100;
-const periods = ['today', 'week', 'month', 'year'];
+const periods = ['today', 'week', 'month', 'year', 'fiveYears'];
 const receiptTerms = [
   'Keep this receipt and the original product tags for return verification.',
   'Store staff verify the original bill, barcode, quantity and condition before accepting a return.',
@@ -11,12 +11,13 @@ const receiptTerms = [
   'Development receipt. Payment and refund records are simulated.'
 ];
 
-function periodStart(period, now) {
+export function periodStart(period, now) {
   const date = new Date(now + 19800000);
   date.setUTCHours(0, 0, 0, 0);
   if (period === 'week') date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7);
   if (period === 'month' || period === 'year') date.setUTCDate(1);
   if (period === 'year') date.setUTCMonth(0);
+  if (period === 'fiveYears') date.setUTCFullYear(date.getUTCFullYear()-5);
   return date.getTime() - 19800000;
 }
 
@@ -67,26 +68,58 @@ export const posMethods = {
   posPromotionList(session) {
     if (session.role !== 'superadmin') throw new DomainError(403, 'Super Admin required');
     return Object.fromEntries(this.products.flatMap(product => product.variants.map(variant => [
-      variant.sku, {name: product.name, color: variant.color, size: variant.size, ...this.posPricing(variant), rule: this.posPromotions[variant.sku] ?? null}
+      variant.sku, {productId:product.id, name:product.name, category:product.category, barcode:variant.barcode,
+        color:variant.color, size:variant.size, active:variant.active!==false, websitePrice:variant.price,
+        stock:this.stock[variant.sku], ...this.posPricing(variant), rule:this.posPromotions[variant.sku] ?? null}
     ])));
   },
 
-  savePosPromotion(session, {sku, type, value}) {
-    if (session.role !== 'superadmin') throw new DomainError(403, 'Super Admin required');
-    const {variant} = this.product(sku);
-    if (type === 'none') delete this.posPromotions[sku];
-    else {
-      const limit = type === 'percent' ? 100 : variant.posPrice ?? variant.price;
-      if (!['percent', 'fixed'].includes(type) || !Number.isFinite(value) || value <= 0 || value > limit ||
-          (type === 'percent' && cents(value) >= 10000) || cents(value) < 1) throw new DomainError(400, 'Enter a positive discount below 100% or a sale price up to the store price');
-      this.posPromotions[sku] = {type, value: rupees(cents(value))};
+  savePosPromotion(session, {sku, scope='variant', target, type, value}) {
+    const catalog = this.posPromotionList(session);
+    if (!['variant','product','category','all'].includes(scope)) throw new DomainError(400,'Choose a promotion scope');
+    const entries = Object.entries(catalog).filter(([key,entry]) =>
+      scope==='all'||(scope==='variant'&&key===sku)||(scope==='product'&&entry.productId===target)||(scope==='category'&&entry.category===target));
+    if (!entries.length) throw new DomainError(400,'Choose a scope with published variants');
+    if (type!=='none' && (!['percent','fixed'].includes(type)||!Number.isFinite(value)||cents(value)<1||
+      (type==='percent'&&cents(value)>=10000)||(type==='fixed'&&entries.some(([,entry])=>cents(value)>cents(entry.regularPrice))))) {
+      throw new DomainError(400,'Use a discount below 100% or a flat price at or below every selected store price');
     }
-    this.event(session, 'POS_PROMOTION_UPDATED', sku);
+    for (const [key] of entries) {
+      if (type==='none') delete this.posPromotions[key];
+      else this.posPromotions[key]={type,value:rupees(cents(value))};
+    }
+    this.event(session,'POS_PROMOTION_UPDATED',target||sku||scope);
     return this.posPromotionList(session);
   },
 
-  posDashboard(session, period, year = null) {
-    const location = this.posLocation(session);
+  importPosPrices(session, rows) {
+    const catalog = this.posPromotionList(session);
+    if (!Array.isArray(rows)||!rows.length||rows.length>10000) throw new DomainError(400,'Upload 1 to 10,000 price rows');
+    const seen=new Set();
+    const changes=rows.map((row,index)=>{
+      const {sku,barcode,price}=row??{};
+      if (!Object.hasOwn(catalog,sku)||catalog[sku].barcode!==barcode||seen.has(sku)||typeof price!=='number'||
+        !Number.isFinite(price)||price<0.01||price>1000000) throw new DomainError(400,`Excel row ${index+2}: check SKU, barcode, duplicate rows and price`);
+      seen.add(sku);
+      return {sku,price:rupees(cents(price))};
+    });
+    let updated=0;
+    for (const {sku,price} of changes) {
+      if (price===catalog[sku].salePrice) continue;
+      const {product,variant}=this.product(sku);
+      variant.posPrice=price;
+      const draft=this.drafts[product.id];
+      const draftVariant=draft?.product.variants.find(entry=>entry.sku===sku);
+      if(draftVariant)draftVariant.posPrice=price;
+      delete this.posPromotions[sku];
+      updated++;
+    }
+    if(updated)this.event(session,'POS_PRICES_IMPORTED',String(updated));
+    return {updated,catalog:this.posPromotionList(session)};
+  },
+
+  posDashboard(session, period, year = null, allStores = false) {
+    const location = allStores && ['admin','superadmin'].includes(session.role) ? null : this.posLocation(session);
     if (!periods.includes(period)) throw new DomainError(400, 'Choose a reporting period');
     const now = this.orderNow();
     const currentYear = new Date(now + 19800000).getUTCFullYear();
@@ -97,7 +130,7 @@ export const posMethods = {
     const start = year === null ? periodStart(period, now) : Date.UTC(selectedYear, 0, 1) - 19800000;
     const end = Math.min(now + 1, Date.UTC(selectedYear + 1, 0, 1) - 19800000);
     const inPeriod = at => Date.parse(at) >= start && Date.parse(at) < end;
-    const storeSales = [...this.sales.values()].filter(sale => sale.locationId === location.id);
+    const storeSales = [...this.sales.values()].filter(sale => !location || sale.locationId === location.id);
     const sales = storeSales.filter(sale => inPeriod(sale.at)).sort((a,b) => b.at.localeCompare(a.at));
     const years = [...new Set([currentYear, ...storeSales.flatMap(sale => [sale.at, ...(sale.returns || []).map(entry => entry.at)])
       .map(at => new Date(Date.parse(at) + 19800000).getUTCFullYear()).filter(value => value <= currentYear)])].sort((a,b) => b-a);

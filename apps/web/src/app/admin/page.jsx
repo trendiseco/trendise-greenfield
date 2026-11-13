@@ -26,6 +26,15 @@ const governanceTabs=[['admin-pos-promotions','Store POS promotions'],['admin-po
 export default function Admin(){
  const [requestedSection,openSection]=useStaffSection('admin-dashboard');
  const [token,T]=useState(''),[role,R]=useState('admin'),[pin,P]=useState(''),[userId,U]=useState(''),[error,E]=useState(''),[notice,N]=useState(''),[catalog,C]=useState({products:[],drafts:{},approvals:[]}),[summary,S]=useState(null),[editor,D]=useState(null),[preview,V]=useState(null),[access,A]=useState(null),[inventory,I]=useState(null),[userForm,F]=useState({id:'',name:'',role:'admin',active:true,locationId:'store-hyd-01'}),[roleName,RN]=useState(''),[permissions,PS]=useState([]),[receipt,RC]=useState({sku:'',locationId:'warehouse-hyd',qty:1,reason:'Fictional opening stock'}),[transfer,ST]=useState({sku:'',from:'warehouse-hyd',to:'store-hyd-01',qty:1});
+ const [period,setPeriod]=useState('today'),[filteredSummary,setFilteredSummary]=useState(null);
+ useEffect(()=>{
+  if(!token||!summary)return;
+  const controller=new AbortController();
+  api('/api/admin/summary?period='+period,{token,signal:controller.signal})
+   .then(data=>{if(!controller.signal.aborted)setFilteredSummary({period,data});})
+   .catch(error=>{if(!controller.signal.aborted)E(error.message);});
+  return ()=>controller.abort();
+ },[token,period,summary]);
  const [categoryName,setCategoryName]=useState('');
  const run=async(fn)=>{E('');N('');try{await fn();}catch(e){E(e.message);}};
  const refresh=async(t=token)=>{const [c,s,i]=await Promise.all([api('/api/admin/catalog',{token:t}),api('/api/admin/summary',{token:t}),api('/api/admin/inventory',{token:t})]);C(c);S(s);I(i);const me=await api('/api/me',{token:t});R(me.role);if(me.role==='superadmin')A(await api('/api/admin/access',{token:t}));else A(null);};
@@ -44,9 +53,9 @@ export default function Admin(){
  }else if(new URLSearchParams(window.location.search).get('role')==='superadmin')R('superadmin');},[]);
  const post=(path,body)=>api(path,{token,method:'POST',body:JSON.stringify(body)});
  const login=()=>run(async()=>{const r=await api('/api/auth/staff',{method:'POST',body:JSON.stringify({role,pin,userId:userId||role})});sessionStorage.setItem('trd_admin_token',r.token);T(r.token);await refresh(r.token);});
- const switchRole=next=>{sessionStorage.removeItem('trd_admin_token');T('');R(next);U('');P('');A(null);S(null);C({products:[],drafts:{},approvals:[]});I(null);D(null);V(null);E('');N('');};
+ const switchRole=next=>{sessionStorage.removeItem('trd_admin_token');T('');setFilteredSummary(null);R(next);U('');P('');A(null);S(null);C({products:[],drafts:{},approvals:[]});I(null);D(null);V(null);E('');N('');};
  const field=(name)=> <label key={name}>{name==='swatch'?'Swatch (optional)':name.toUpperCase()}<input required={name!=='swatch'} placeholder={productExamples[name]?'e.g. '+productExamples[name]:undefined} value={editor[name]||''} onChange={e=>D({...editor,[name]:e.target.value})}/></label>;
- const edit=p=>{const d=catalog.drafts[p.id];D(d?{...structuredClone(d.product),revision:d.revision}:structuredClone(p));V(null);};
+ const edit=p=>{const d=catalog.drafts[p.id];D(d&&d.status!=='published'?{...structuredClone(d.product),revision:d.revision}:d?{...structuredClone(p),revision:d.revision}:structuredClone(p));V(null);};
  const setImageKind=async(i,kind)=>{const im=editor.images[i];if(kind==='tryon'){if(!im.color||!/^data:image\/(png|webp);/.test(im.src))throw new Error('Select a variant color and use a transparent PNG or WebP cutout.');const img=await new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error('Unable to open cutout'));image.src=im.src;});const c=document.createElement('canvas');c.width=80;c.height=80;const ctx=c.getContext('2d');ctx.drawImage(img,0,0,80,80);const pixels=ctx.getImageData(0,0,80,80).data;let transparent=0;for(let n=3;n<pixels.length;n+=4)if(pixels[n]<240)transparent++;if(transparent<64||transparent>6336)throw new Error('Cutout must contain a visible garment with a transparent background. Remove the background before uploading.');}D({...editor,images:editor.images.map((x,n)=>n===i?{...x,kind}:x)});};
  const upload=async file=>{if(!file)return;if(file.size>500000||!['image/png','image/jpeg','image/webp'].includes(file.type))throw new Error('Choose PNG, JPEG or WebP up to 500 KB');if(editor.images?.length>=20)throw new Error('Maximum twenty images');const src=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=reject;r.readAsDataURL(file);});D({...editor,images:[...(editor.images||[]),{src,alt:editor.name||'Product photograph',color:editor.variants[0]?.color||'',label:'Product photo'}]});};
  const tabs=access?[...managementTabs,...governanceTabs]:managementTabs;
@@ -59,7 +68,9 @@ export default function Admin(){
  {error&&<div className="modal-overlay"><div className="modal-card" role="alertdialog" aria-modal="true" aria-label="Validation error"><h2>Unable to complete</h2><p>{error}</p><button autoFocus onClick={()=>E('')}>Close</button></div></div>}{notice&&<p role="status">{notice}</p>}
 
  <StaffTabs label="Management sections" tabs={tabs} active={section} onChange={openSection}/>
- <div className="operations-pane" hidden={section!=='admin-dashboard'}>{summary?.status?<AdminDashboard data={summary} onOpenOrders={openOrders}/>:<p role="status">Loading dashboard…</p>}</div>
+ <div className="operations-pane" hidden={section!=='admin-dashboard'}><label>Dashboard period<select value={period} onChange={event=>setPeriod(event.target.value)}>
+   {Object.entries({today:'Today',week:'This week',month:'This month',year:'This year',fiveYears:'Past 5 years'}).map(([value,label])=><option key={value} value={value}>{label}</option>)}
+  </select></label>{filteredSummary?.period===period?<AdminDashboard data={filteredSummary.data} onOpenOrders={openOrders}/>:<p role="status">Loading dashboard…</p>}</div>
  {section==='admin-customers'&&<PosHistory token={token}/>}
  {access&&section==='admin-pos-terms'&&<PosTerms key={token} token={token}/>}
  {access&&section==='admin-pos-promotions'&&<PosPromotions token={token}/>}
@@ -81,6 +92,7 @@ export default function Admin(){
    run(async()=>{
     const {categories}=await post('/api/admin/categories',{name:categoryName});
     C(previous=>({...previous,categories}));
+    localStorage.setItem('trd_categories_updated',String(Date.now()));
     setCategoryName('');
     N('Category added.');
    });
@@ -88,7 +100,21 @@ export default function Admin(){
    <label>Category name<input required maxLength={80} placeholder="e.g. Jackets" value={categoryName} onChange={event=>setCategoryName(event.target.value)}/></label>
    <button type="submit" disabled={!categoryName.trim()}>Add category</button>
   </form>
-  <ul>{catalog.categories?.map(name=><li key={name}>{name}</li>)}</ul>
+  <p>Hide a category to take its products off both the website and Store POS. Move any assigned products or drafts before removing it.</p>
+  <ul>{catalog.categories?.map(name=>{
+   const hidden=catalog.hiddenCategories?.includes(name);
+   const assigned=catalog.products.some(product=>product.category===name)||Object.values(catalog.drafts).some(draft=>draft.product.category===name);
+   const update=action=>run(async()=>{
+    const result=await post('/api/admin/categories/update',{name,action});
+    C(previous=>({...previous,...result}));
+    localStorage.setItem('trd_categories_updated',String(Date.now()));
+    N('Category updated.');
+   });
+   return <li key={name} className="m02-row"><span>{name} · {hidden?'Hidden':'Visible'}</span>
+    <button onClick={()=>update(hidden?'show':'hide')}>{hidden?'Show':'Hide'}</button>
+    <button disabled={assigned} onClick={()=>update('remove')}>Remove</button>
+   </li>;
+  })}</ul>
  </section>}
  {access&&<><section className="staff-panel operations-pane" hidden={section!=='admin-approvals'} id="admin-approvals"><h2>Approval queue</h2>{Object.values(catalog.drafts).filter(d=>d.status==='pending').map(d=><div className="m02-row" key={d.product.id}><span>{d.product.name} · revision {d.revision} · submitted by {d.submittedBy}</span><button onClick={()=>{D({...structuredClone(d.product),revision:d.revision});V(structuredClone(d.product));openSection('admin-products');}}>Inspect</button>{['publish','reject'].map(action=><button key={action} onClick={()=>run(async()=>{await post(`/api/admin/products/${d.product.id}/decide`,{revision:d.revision,action});await refresh();N(`Product ${action} complete.`);})}>{action}</button>)}</div>)}<h3>Decision history</h3>{catalog.approvals.slice(-10).reverse().map((a,i)=><p key={i}>{a.id} · revision {a.revision} · {a.action} by {a.actor}</p>)}</section>
  <section className="staff-panel operations-pane" hidden={section!=='admin-staff'} id="admin-staff"><h2>Staff access · demo PIN 1234</h2>{access.users.map(u=><div className="m02-row" key={u.id}><span>{u.name} ({u.id}) · {u.role} · {u.active?'Active':'Disabled'}</span><button onClick={()=>F({...u})}>Edit</button></div>)}<div className="m02-grid">{['id','name'].map(k=><label key={k}>{k}<input placeholder={k==='id'?'e.g. warehouse-hyd':'e.g. Warehouse operator'} value={userForm[k]} onChange={e=>F({...userForm,[k]:e.target.value})}/></label>)}<label>Role<select value={userForm.role} onChange={e=>F({...userForm,role:e.target.value})}>{Object.keys(access.roles).map(r=><option key={r}>{r}</option>)}</select></label><label>Location<select value={userForm.locationId} onChange={e=>F({...userForm,locationId:e.target.value})}>{inventory?.locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label><label><input type="checkbox" checked={userForm.active} onChange={e=>F({...userForm,active:e.target.checked})}/>Active</label></div><button onClick={()=>run(async()=>{await post('/api/admin/users',userForm);await refresh();N('Staff access saved.');})}>Save user</button>

@@ -108,6 +108,7 @@ const handle=async (req,res)=>{
       if(is('GET','/api/admin/pos-terms'))return respond(res,200,core.posTermsSettings(staff));
       if(is('POST','/api/admin/pos-terms'))return respond(res,200,core.savePosTerms(staff,(await bodyOf(req))?.text));
       if(is('GET','/api/admin/pos-promotions'))return respond(res,200,core.posPromotionList(staff));
+      if(is('POST','/api/admin/pos-price-import'))return respond(res,200,core.importPosPrices(staff,(await bodyOf(req))?.rows));
       if(is('POST','/api/admin/pos-promotions'))return respond(res,200,core.savePosPromotion(staff,await bodyOf(req)));
       if(is('GET','/api/admin/orders'))return respond(res,200,core.adminOrderList(staff,url.searchParams));
       const adminOrder=path.match(/^\/api\/admin\/orders\/(TRD-\d+)$/);
@@ -124,7 +125,8 @@ const handle=async (req,res)=>{
       if(is('GET','/api/admin/rewards')){core.permit(staff,'rewards.manage');core.ensureWebsite();return respond(res,200,{rules:core.website.rules,customers:Object.values(core.website.customers),ledger:core.website.rewardLedger.slice(-100).reverse()});}
       if(is('POST','/api/admin/rewards'))return respond(res,200,await core.saveRewardRules(staff,await bodyOf(req)));
       if(is('POST','/api/admin/rewards/customer'))return respond(res,200,await core.adjustCustomer(staff,await bodyOf(req)));
-      if(is('GET','/api/admin/catalog')){core.permit(staff,'catalog.edit');return respond(res,200,{products:core.products,drafts:core.drafts,approvals:core.approvals,categories:core.catalogCategories()});}
+      if(is('GET','/api/admin/catalog')){core.permit(staff,'catalog.edit');return respond(res,200,{products:core.products,drafts:core.drafts,approvals:core.approvals,categories:core.catalogCategories(),hiddenCategories:core.hiddenCategories});}
+      if(is('POST','/api/admin/categories/update'))return respond(res,200,await core.updateCatalogCategory(staff,await bodyOf(req)));
       if(is('POST','/api/admin/categories'))return respond(res,201,{categories:await core.addCatalogCategory(staff,await bodyOf(req))});
       if(is('POST','/api/admin/products'))return respond(res,200,await core.saveDraft(staff,await bodyOf(req)));
       const action=path.match(/^\/api\/admin\/products\/([^/]+)\/(submit|decide)$/);
@@ -136,7 +138,10 @@ const handle=async (req,res)=>{
       if(is('POST','/api/admin/inventory/receive'))return respond(res,200,await core.receiveStock(staff,await bodyOf(req)));
       if(is('POST','/api/admin/inventory/transfer'))return respond(res,200,await core.moveStock(staff,await bodyOf(req)));
     }
-    if(is('GET','/api/admin/summary')){core.session(tokenFrom(req),['admin','superadmin']);return respond(res,200,adminDashboard(core));}
+    if(is('GET','/api/admin/summary')){core.session(tokenFrom(req),['admin','superadmin']);const period=url.searchParams.get('period');
+      if(!period)return respond(res,200,adminDashboard(core));
+      const pos=core.posDashboard(core.session(tokenFrom(req)),period,null,true);
+      return respond(res,200,{...adminDashboard(core,period),pos:{bills:pos.sales.length,customers:pos.customers,gross:pos.gross,refunded:pos.refunded,net:pos.net}});}
     if(is('POST','/api/tryon/mock')){core.session(tokenFrom(req),['customer']);const b=await bodyOf(req);if(!b.sku)throw new DomainError(400,'Select a product');core.product(b.sku);return respond(res,200,{status:'mock_only',generatedImage:null,message:'Virtual try-on generation is intentionally disabled in Development. No photos are uploaded to AI providers.'});}
     return respond(res,404,{error:'Endpoint not found',code:'NOT_FOUND'});
   }catch(err){
