@@ -46,3 +46,17 @@ test('the courier lookup endpoint only allows Admin and Super Admin',async()=>{
   }
  }finally{await new Promise(resolve=>server.close(resolve));}
 });
+
+test('plain-text sandbox denial is reported without exposing the provider body',async()=>{
+ const config={SHIPROCKET_RATE_LOOKUP:'true',SHIPROCKET_API_EMAIL:'test@example.invalid',SHIPROCKET_API_PASSWORD:'fixture'};
+ const calls=[];
+ const lookup=createShiprocketLookup(config,async url=>{
+  calls.push(url);
+  return new Response('Access Denied. Private provider details.',{status:498});
+ });
+ await assert.rejects(lookup({deliveryPin:'110001',weightKg:0.5,cod:true}),{
+  code:'SHIPROCKET_SANDBOX_ACCESS_DENIED',
+  message:'Shiprocket sandbox denied backend authentication (HTTP 498). Verify external sandbox access with Shiprocket.'
+ });
+ assert.deepEqual(calls,['https://api-sandbox.shiprocket.in/v1/external/auth/login']);
+});

@@ -6,11 +6,21 @@ const pinPattern=/^[1-9]\d{5}$/;
 export function createShiprocketLookup(env=process.env,request=fetch){
  let cachedLogin;
  async function call(path,options){
+  let response;
   try{
-   const response=await request(base+path,{...options,signal:AbortSignal.timeout(8000),redirect:'error'});
-   return {status:response.status,ok:response.ok,data:await response.json()};
+   response=await request(base+path,{...options,headers:{Accept:'application/json',...options.headers},signal:AbortSignal.timeout(8000),redirect:'error'});
   }catch{
-   throw new DomainError(502,'Shiprocket did not respond. Please retry.');
+   throw new DomainError(502,'Could not reach the Shiprocket sandbox. Please retry.');
+  }
+  if(response.status===498||response.status===403){
+   const step=path==='/auth/login'?'authentication':'courier lookup';
+   throw new DomainError(502,`Shiprocket sandbox denied backend ${step} (HTTP ${response.status}). Verify external sandbox access with Shiprocket.`,'SHIPROCKET_SANDBOX_ACCESS_DENIED');
+  }
+  if(!response.ok)return {status:response.status,ok:false};
+  try{
+   return {status:response.status,ok:true,data:await response.json()};
+  }catch{
+   throw new DomainError(502,'Shiprocket sandbox returned an unreadable response.');
   }
  }
  async function login(){
@@ -37,7 +47,7 @@ export function createShiprocketLookup(env=process.env,request=fetch){
   }
   const token=await login();
   const params=new URLSearchParams({pickup_postcode:pickup,delivery_postcode:deliveryPin,cod:cod?'1':'0',weight:String(weightKg)});
-  const {ok,status,data}=await call('/courier/serviceability/?'+params,{headers:{Authorization:'Bearer '+token}});
+  const {ok,status,data}=await call('/courier/serviceability?'+params,{headers:{Authorization:'Bearer '+token}});
   if(status===401)cachedLogin=undefined;
   if(!ok||!Array.isArray(data?.data?.available_courier_companies))throw new DomainError(502,'Shiprocket could not check this route. Verify the PIN and try again.');
   const couriers=data.data.available_courier_companies.map(row=>({
