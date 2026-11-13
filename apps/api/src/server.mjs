@@ -4,7 +4,7 @@ import {adminDashboard} from './admin-dashboard.mjs';
 import {policyDocument} from '../../../shared/order-policy.mjs';
 import http from 'node:http';
 import { URL } from 'node:url';
-import { Commerce, DomainError } from './core.mjs';
+import { Commerce, DomainError, canonicalPhone } from './core.mjs';
 import {DurableCommerce,poolFor} from './database.mjs';
 
 if (process.env.NODE_ENV==='production') throw new Error('Mock API must not run in production mode.');
@@ -69,7 +69,15 @@ const handle=async (req,res)=>{
     if(req.method==='POST'&&delivered)return respond(res,200,await core.markDelivered(core.session(tokenFrom(req)),delivered[1]));
     if(is('GET','/api/orders')){const s=core.session(tokenFrom(req),['customer','warehouse','admin','superadmin']);return respond(res,200,{orders:core.ordersFor(s)});}
     if(is('POST','/api/pos/sales')){const s=core.session(tokenFrom(req));const b=await bodyOf(req);return respond(res,201,await core.completePosSale(s,{...b,idempotencyKey:String(req.headers['x-idempotency-key']||b.idempotencyKey||'')}));}
-    if(is('GET','/api/pos/inventory')){core.permit(core.session(tokenFrom(req)),'pos.sell');return respond(res,200,{products:core.listing('store'),locationId:'store-hyd-01',stock:core.stock});}
+    if(is('GET','/api/pos/inventory'))return respond(res,200,core.posInventory(core.session(tokenFrom(req))));
+    if(is('GET','/api/pos/dashboard'))return respond(res,200,core.posDashboard(core.session(tokenFrom(req)),url.searchParams.get('period')||'today'));
+    if(is('POST','/api/pos/customers/search')) {
+      const staff=core.session(tokenFrom(req));
+      const {phone}=await bodyOf(req);
+      return respond(res,200,core.purchaseHistory(staff,canonicalPhone(phone)));
+    }
+    const posReturn=path.match(/^\/api\/pos\/sales\/(POS-\d+)\/returns$/);
+    if(req.method==='POST'&&posReturn)return respond(res,200,await core.returnPosItem(core.session(tokenFrom(req)),posReturn[1],await bodyOf(req),req.headers['x-idempotency-key']));
     if(is('GET','/api/warehouse/inventory'))return respond(res,200,core.warehouseInventory(core.session(tokenFrom(req)),url.searchParams));
     if(is('GET','/api/warehouse/orders'))return respond(res,200,{orders:core.warehouseQueue(core.session(tokenFrom(req)))});
     const warehouseOrder=path.match(/^\/api\/warehouse\/orders\/(TRD-\d+)$/);
@@ -96,6 +104,8 @@ const handle=async (req,res)=>{
     }
     if(path.startsWith('/api/admin/')){
       const staff=core.session(tokenFrom(req));
+      if(is('GET','/api/admin/pos-promotions'))return respond(res,200,core.posPromotionList(staff));
+      if(is('POST','/api/admin/pos-promotions'))return respond(res,200,core.savePosPromotion(staff,await bodyOf(req)));
       if(is('GET','/api/admin/orders'))return respond(res,200,core.adminOrderList(staff,url.searchParams));
       const adminOrder=path.match(/^\/api\/admin\/orders\/(TRD-\d+)$/);
       if(req.method==='GET'&&adminOrder)return respond(res,200,core.adminOrderDetail(staff,adminOrder[1]));

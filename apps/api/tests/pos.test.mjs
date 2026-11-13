@@ -1,0 +1,62 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {Commerce,canonicalPhone} from '../src/core.mjs';
+import {restore,snapshot} from '../src/database.mjs';
+
+test('store billing preserves prices, GST, customer history and exact restock across reloads', async () => {
+ const app = new Commerce();
+ app.clock = () => new Date('2026-11-13T05:00:00Z');
+ const cashier = {role:'pos',locationId:'store-hyd-01',userId:'pos'};
+ const admin = {role:'admin'};
+ const superadmin = {role:'superadmin'};
+ const product = app.products[0];
+ const [variant, second] = product.variants;
+ const {sku,barcode} = variant;
+ variant.posPrice = 1500;
+ assert.throws(() => app.savePosPromotion(cashier,{sku,type:'percent',value:10}),{status:403});
+ app.savePosPromotion(superadmin,{sku,type:'percent',value:10});
+ app.savePosPromotion(superadmin,{sku:second.sku,type:'fixed',value:1000});
+ assert.equal(app.posInventory(cashier).products[0].variants[0].salePrice,1350);
+ assert.equal(app.posInventory(cashier).products[0].variants[1].salePrice,1000);
+ assert.equal(app.listing()[0].variants[0].posPrice,undefined);
+ const body = {items:[{sku,qty:2},{sku:second.sku,qty:1}],paymentMethod:'Cash',expectedTotal:3700,idempotencyKey:'pos-complete-test'};
+ await assert.rejects(app.completePosSale(cashier,body),{status:400});
+ body.customer = {name:'Example Customer',phone:'+91 98765 43210'};
+ await assert.rejects(app.completePosSale(cashier,{...body,expectedTotal:3701}),{status:409});
+ const storeBefore = app.stock[sku]['store-hyd-01'];
+ const warehouseBefore = app.stock[sku]['warehouse-hyd'];
+ const {sale} = await app.completePosSale(cashier,body);
+ assert.equal(sale.customer.phone,'9876543210');
+ assert.equal(sale.quote.total,3700);
+ assert.equal(sale.quote.gst,176.19);
+ assert.equal(sale.quote.taxable,3523.81);
+ assert.ok(sale.terms.length);
+ assert.deepEqual(await app.completePosSale(cashier,body),{sale,message:'Demo sale completed. No payment collected.'});
+ assert.equal(app.stock[sku]['store-hyd-01'],storeBefore-2);
+
+ const reloaded = new Commerce();
+ restore(reloaded,structuredClone(snapshot(app)));
+ reloaded.clock = app.clock;
+ assert.equal(reloaded.purchaseHistory(admin,canonicalPhone('+91 98765 43210')).sales[0].id,sale.id);
+ assert.throws(() => reloaded.purchaseHistory({role:'warehouse'},sale.customer.phone),{status:403});
+ const input = {barcode,qty:1,reason:'Wrong size',sellable:true};
+ await assert.rejects(reloaded.returnPosItem(cashier,sale.id,{...input,barcode:second.barcode+'X'},'wrong-barcode'),{status:400});
+ await assert.rejects(reloaded.returnPosItem(cashier,sale.id,{...input,sellable:false},'no-inspection'),{status:400});
+ const first = await reloaded.returnPosItem(cashier,sale.id,input,'return-part-one');
+ assert.equal(first.return.refund,1350);
+ assert.deepEqual(await reloaded.returnPosItem(cashier,sale.id,input,'return-part-one'),first);
+ const last = await reloaded.returnPosItem(cashier,sale.id,input,'return-part-two');
+ assert.equal(Math.round((first.return.gst+last.return.gst)*100),12857);
+ assert.equal(reloaded.stock[sku]['warehouse-hyd'],warehouseBefore+2);
+ await assert.rejects(reloaded.returnPosItem(cashier,sale.id,input,'return-too-many'),{status:409});
+ for (const period of ['today','week','month','year']) {
+  const dashboard = reloaded.posDashboard(cashier,period);
+  assert.equal(dashboard.sales.length,1);
+  assert.equal(dashboard.refunded,2700);
+  assert.equal(dashboard.net,1000);
+ }
+ reloaded.clock = () => new Date('2026-11-15T18:30:00Z');
+ assert.equal(reloaded.posDashboard(cashier,'today').sales.length,0);
+ assert.equal(reloaded.posDashboard(cashier,'week').sales.length,0);
+ assert.equal(reloaded.posDashboard(cashier,'month').sales.length,1);
+});

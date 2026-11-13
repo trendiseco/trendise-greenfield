@@ -1,3 +1,4 @@
+import {posMethods} from './pos.mjs';
 import {warehouseInventory} from './warehouse-inventory.mjs';
 import {resolvePickLine} from '../../../shared/warehouse-pick.mjs';
 import {returnInspectionMethods} from './return-inspection.mjs';
@@ -13,13 +14,14 @@ import { initialProducts, initialLocations, generateMockStock, policies } from '
 import {DomainError} from './errors.mjs';
 export {DomainError} from './errors.mjs';
 const clone = value => structuredClone(value);
-const canonicalPhone=phone=>{const value=String(phone).replace(/[\s-]/g,'');if(!/^(?:\+91|91)?[6-9]\d{9}$/.test(value))throw new DomainError(400,'Enter a valid Indian mobile number');return value.replace(/\D/g,'').slice(-10);};
+export const canonicalPhone=phone=>{const value=String(phone).replace(/[\s-]/g,'');if(!/^(?:\+91|91)?[6-9]\d{9}$/.test(value))throw new DomainError(400,'Enter a valid Indian mobile number');return value.replace(/\D/g,'').slice(-10);};
 const money = value => Math.round(value*100)/100;
 
 export class Commerce {
   constructor() {
     this.website=websiteState();
     this.additionalCategories=[];
+    this.posPromotions={};
     this.products=clone(initialProducts).map(upgradeSizeChart);
     this.drafts={}; this.approvals=[];
     this.roles={admin:['catalog.edit','catalog.submit','inventory.read','pos.sell','warehouse.fulfill','website.manage','offers.manage','rewards.manage'],superadmin:['*'],pos:['pos.sell'],warehouse:['warehouse.fulfill']};
@@ -63,7 +65,14 @@ export class Commerce {
     const now=Date.now();
     for(const r of this.reservations.values()) if(r.status==='active'&&r.expiresAt<=now)r.status='expired';
   }
-  listing(channel='online') {return this.products.filter(p=>channel==='store'||p.websiteVisible!==false).map(p=>({ ...p,variants:p.variants.map(v=>({...v,available:this.available(v.sku)})) }));}
+  listing(channel='online') {
+    return this.products.filter(product=>channel==='store'||product.websiteVisible!==false).map(product=>({
+      ...product,
+      variants:product.variants.map(({posPrice,...variant})=>({
+        ...variant, ...(channel==='store'&&posPrice!=null?{posPrice}:{}), available:this.available(variant.sku)
+      }))
+    }));
+  }
   catalogBarcode(barcode) { for(const p of this.products)for(const v of p.variants)if(v.barcode===barcode)return {product:p,variant:v};throw new DomainError(404,'Barcode not found','BARCODE_NOT_FOUND'); }
   ensureUniqueBarcodes() {const codes=this.products.flatMap(p=>p.variants.map(v=>v.barcode));return new Set(codes).size===codes.length;}
   requestOtp(phone) {phone=canonicalPhone(phone);const normalized=phone.replace(/[\s-]/g,'');if(!/^(?:\+91|91)?[6-9]\d{9}$/.test(normalized))throw new DomainError(400,'Enter a valid Indian mobile number');this.otpRequests.set(phone,{code:'123456',expiresAt:Date.now()+300000});return {message:'Mock OTP generated (not sent)',devOtp:'123456',expiresInSeconds:300};}
@@ -74,7 +83,7 @@ export class Commerce {
   price(lines,channel,coupon) {
     const items=lines.map(line=>{const {product,variant}=this.product(line.sku);return {sku:line.sku,name:product.name,color:variant.color,size:variant.size,barcode:variant.barcode,qty:line.qty,unitPrice:variant.price,lineTotal:money(variant.price*line.qty)};});
     const subtotal=money(items.reduce((n,item)=>n+item.lineTotal,0));
-    const allowed=channel==='store'?{STORE10:0.10,STORE20:0.20}:{WELCOME10:0.10};
+    const allowed=channel==='store'?{}:{WELCOME10:0.10};
     if(coupon&&!Object.hasOwn(allowed,coupon))throw new DomainError(400,'Coupon is not valid for this sales channel','INVALID_COUPON');
     const discount=money(subtotal*(allowed[coupon]||0));
     return {items,subtotal,discount,shipping:0,total:money(subtotal-discount),currency:'INR',coupon:coupon||null,taxNote:'Illustrative tax-inclusive sample prices. GST rules not configured.'};
@@ -134,18 +143,23 @@ export class Commerce {
   });}
   decrement(allocation,reason,ref){const before=this.stock[allocation.sku][allocation.locationId];this.stock[allocation.sku][allocation.locationId]-=allocation.qty;this.ledger.push({id:randomUUID(),sku:allocation.sku,locationId:allocation.locationId,delta:-allocation.qty,before,after:this.stock[allocation.sku][allocation.locationId],reason,ref,at:new Date().toISOString()});}
   async completePosSale(session,body){return this.serialized(()=>{
-    this.permit(session,'pos.sell');
+    const location=this.posLocation(session);
     const key=String(body.idempotencyKey||'');if(key.length<6)throw new DomainError(400,'Idempotency key required');
-    const eventKey=`pos:${session.role}:${session.locationId||'store-hyd-01'}:${key}`;
-    const fingerprint=JSON.stringify({items:body.items,coupon:body.coupon||'',paymentMethod:body.paymentMethod});
+    const eventKey=`pos:${session.role}:${location.id}:${key}`;
+    const name=typeof body.customer?.name==='string'?body.customer.name.trim():'';
+    if(!name||name.length>100)throw new DomainError(400,'Enter the customer name');
+    const customer={name,phone:canonicalPhone(body.customer?.phone)};
+    const fingerprint=JSON.stringify({items:body.items,coupon:body.coupon||'',paymentMethod:body.paymentMethod,customer,expectedTotal:body.expectedTotal});
     const known=this.getIdempotent(eventKey,fingerprint);if(known)return known;
     const items=this.normalizeLines(body.items);
-    const quote=this.price(items,'store',String(body.coupon||'').trim().toUpperCase());
-    const allocations=this.allocations(items,'store',session.locationId||'store-hyd-01');
+    if(body.coupon)throw new DomainError(400,'Store promotions are set by Super Admin and apply automatically','INVALID_COUPON');
+    const quote=this.posQuote(items);
+    if(body.expectedTotal!==undefined&&quote.total!==body.expectedTotal)throw new DomainError(409,'Store prices changed. Refresh the bill before saving.');
+    const allocations=this.allocations(items,'store',location.id);
     if(!['Cash','UPI','Card'].includes(body.paymentMethod))throw new DomainError(400,'Select a mock store payment method');
     const id=`POS-${String(this.sales.size+1).padStart(5,'0')}`;
     for(const allocation of allocations)this.decrement(allocation,'MOCK_POS_SALE',id);
-    const sale={id,items:quote.items,quote,locationId:session.locationId||'store-hyd-01',payment:{method:body.paymentMethod,status:'simulated',reference:`MOCK-${id}`},at:new Date().toISOString()};
+    const sale={id,items:quote.items,quote,locationId:location.id,locationName:location.name,customer,staffId:session.userId,terms:this.posReceiptTerms(),payment:{method:body.paymentMethod,status:'simulated',reference:`MOCK-${id}`},at:new Date(this.orderNow()).toISOString()};
     this.sales.set(id,sale);this.audit.push({type:'POS_SALE',id,at:sale.at});
     const response={sale:clone(sale),message:'Demo sale completed. No payment collected.'};this.setIdempotent(eventKey,fingerprint,response);return response;
   });}
@@ -286,7 +300,9 @@ export class Commerce {
       const existing=this.products.find(x=>x.id===id)?.variants;
       if(existing?.some(x=>x.sku===v.sku&&x.barcode!==v.barcode))throw new DomainError(409,'Published variant identities are permanent; create a new product for new variants');
       if(typeof v.price!=='number'||!Number.isFinite(v.price)||v.price<=0||v.price>1000000)throw new DomainError(400,'Variant price must be positive');
-      skus.add(v.sku);barcodes.add(v.barcode);return {id:v.sku,sku:v.sku,barcode:v.barcode,color:v.color,shade:v.shade||v.color,size:v.size,price:money(v.price),active:v.active!==false};
+      const posPrice=v.posPrice===undefined?existing?.find(x=>x.sku===v.sku)?.posPrice:v.posPrice;
+      if(posPrice!=null&&(typeof posPrice!=='number'||!Number.isFinite(posPrice)||posPrice<0.01||posPrice>1000000))throw new DomainError(400,'Store POS price must be positive');
+      skus.add(v.sku);barcodes.add(v.barcode);return {id:v.sku,sku:v.sku,barcode:v.barcode,color:v.color,shade:v.shade||v.color,size:v.size,price:money(v.price),...(posPrice!=null?{posPrice:money(posPrice)}:{}),active:v.active!==false};
     });
     if(this.products.find(x=>x.id===id)?.variants.some(v=>!skus.has(v.sku)))throw new DomainError(409,'Published variants cannot be removed');
     p.images=(p.images||[]).map(image=>{
@@ -381,4 +397,4 @@ export class Commerce {
   health(){return {status:'ok',mode:'DEVELOPMENT_MOCK_ONLY',paymentProvider:'MOCK_RAZORPAY',shippingProvider:'MOCK_SHIPROCKET',otpProvider:'MOCK_OTP',mapsProvider:'MOCK_MAP',aiProvider:'MOCK_TRYON',orders:this.orders.size,posSales:this.sales.size};}
 }
 
-Object.assign(Commerce.prototype,websiteMethods,adminOrderMethods,returnInspectionMethods,{warehouseInventory});
+Object.assign(Commerce.prototype,websiteMethods,adminOrderMethods,returnInspectionMethods,posMethods,{warehouseInventory});

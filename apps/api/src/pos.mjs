@@ -1,0 +1,166 @@
+import {randomUUID} from 'node:crypto';
+import {DomainError} from './errors.mjs';
+
+const cents = value => Math.round(value * 100);
+const rupees = value => value / 100;
+const periods = ['today', 'week', 'month', 'year'];
+const receiptTerms = [
+  'Keep this receipt and the original product tags for return verification.',
+  'Store staff verify the original bill, barcode, quantity and condition before accepting a return.',
+  'Any approved return is valued at the price actually paid, after discounts. Applicable customer rights remain in effect.',
+  'Development receipt. Payment and refund records are simulated.'
+];
+
+function periodStart(period, now) {
+  const date = new Date(now + 19800000);
+  date.setUTCHours(0, 0, 0, 0);
+  if (period === 'week') date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7);
+  if (period === 'month' || period === 'year') date.setUTCDate(1);
+  if (period === 'year') date.setUTCMonth(0);
+  return date.getTime() - 19800000;
+}
+
+export const posMethods = {
+  posLocation(session) {
+    this.permit(session, 'pos.sell');
+    const location = this.locations.find(entry => entry.id === (session.locationId || 'store-hyd-01') && entry.type === 'store');
+    if (!location) throw new DomainError(403, 'A store assignment is required');
+    return location;
+  },
+
+  posPricing(variant) {
+    const regular = cents(variant.posPrice ?? variant.price);
+    const rule = this.posPromotions[variant.sku];
+    const sale = rule?.type === 'fixed' ? Math.min(regular, cents(rule.value))
+      : rule?.type === 'percent' ? Math.max(1, Math.round(regular * (100 - rule.value) / 100)) : regular;
+    return {regularPrice: rupees(regular), salePrice: rupees(sale)};
+  },
+
+  posInventory(session) {
+    const location = this.posLocation(session);
+    const products = this.listing('store').map(product => ({
+      ...product,
+      variants: product.variants.filter(variant => variant.active !== false).map(variant => ({
+        ...variant, ...this.posPricing(variant), available: this.available(variant.sku, location.id)
+      }))
+    }));
+    return {products, locationId: location.id, locationName: location.name, stock: this.stock};
+  },
+
+  posQuote(lines) {
+    const items = lines.map(({sku, qty}) => {
+      const {product, variant} = this.product(sku);
+      const {regularPrice, salePrice} = this.posPricing(variant);
+      const unit = cents(salePrice);
+      const gross = unit * qty;
+      const gst = Math.round(gross * 5 / 105);
+      return {sku, qty, name: product.name, barcode: variant.barcode, size: variant.size, color: variant.color,
+        regularPrice, unitPrice: rupees(unit), lineTotal: rupees(gross), gst: rupees(gst)};
+    });
+    const subtotal = items.reduce((sum, item) => sum + cents(item.regularPrice) * item.qty, 0);
+    const total = items.reduce((sum, item) => sum + cents(item.lineTotal), 0);
+    const gst = items.reduce((sum, item) => sum + cents(item.gst), 0);
+    return {items, subtotal: rupees(subtotal), discount: rupees(subtotal - total), total: rupees(total),
+      gst: rupees(gst), taxable: rupees(total - gst), gstRate: 5, currency: 'INR', shipping: 0, coupon: null};
+  },
+
+  posPromotionList(session) {
+    if (session.role !== 'superadmin') throw new DomainError(403, 'Super Admin required');
+    return Object.fromEntries(this.products.flatMap(product => product.variants.map(variant => [
+      variant.sku, {name: product.name, color: variant.color, size: variant.size, ...this.posPricing(variant), rule: this.posPromotions[variant.sku] ?? null}
+    ])));
+  },
+
+  savePosPromotion(session, {sku, type, value}) {
+    if (session.role !== 'superadmin') throw new DomainError(403, 'Super Admin required');
+    const {variant} = this.product(sku);
+    if (type === 'none') delete this.posPromotions[sku];
+    else {
+      const limit = type === 'percent' ? 100 : variant.posPrice ?? variant.price;
+      if (!['percent', 'fixed'].includes(type) || !Number.isFinite(value) || value <= 0 || value > limit ||
+          (type === 'percent' && cents(value) >= 10000) || cents(value) < 1) throw new DomainError(400, 'Enter a positive discount below 100% or a sale price up to the store price');
+      this.posPromotions[sku] = {type, value: rupees(cents(value))};
+    }
+    this.event(session, 'POS_PROMOTION_UPDATED', sku);
+    return this.posPromotionList(session);
+  },
+
+  posDashboard(session, period) {
+    const location = this.posLocation(session);
+    if (!periods.includes(period)) throw new DomainError(400, 'Choose a reporting period');
+    const now = this.orderNow();
+    const start = periodStart(period, now);
+    const inPeriod = at => Date.parse(at) >= start && Date.parse(at) <= now;
+    const storeSales = [...this.sales.values()].filter(sale => sale.locationId === location.id);
+    const sales = storeSales.filter(sale => inPeriod(sale.at)).reverse();
+    const gross = sales.reduce((sum, sale) => sum + cents(sale.quote.total), 0);
+    const refunded = storeSales.flatMap(sale => sale.returns || []).filter(entry => inPeriod(entry.at))
+      .reduce((sum, entry) => sum + cents(entry.refund), 0);
+    return {sales, gross: rupees(gross), refunded: rupees(refunded), net: rupees(gross - refunded),
+      customers: new Set(sales.map(sale => sale.customer?.phone).filter(Boolean)).size};
+  },
+
+  purchaseHistory(session, phone) {
+    const manager = ['admin', 'superadmin'].includes(session.role);
+    const location = manager ? null : this.posLocation(session);
+    const sales = [...this.sales.values()].filter(sale => sale.customer?.phone === phone && (!location || sale.locationId === location.id)).reverse();
+    const orders = [...this.orders.values()].filter(order => order.phone === phone).reverse().map(order => ({
+      id: order.id, at: order.placedAt, name: order.address?.name, status: order.status,
+      items: order.items.map(({name, sku, color, size, qty, unitPrice}) => ({name, sku, color, size, qty, unitPrice})),
+      total: order.quote.total, payment: order.payment?.method
+    }));
+    return {phone, sales, orders, name: sales[0]?.customer?.name || this.website.customers[phone]?.name || orders[0]?.name};
+  },
+
+  async returnPosItem(session, id, body, key) {
+    return this.serialized(() => {
+      const location = this.posLocation(session);
+      const sale = this.sales.get(id);
+      if (!sale || sale.locationId !== location.id) throw new DomainError(404, 'Store bill not found');
+      const barcode = String(body.barcode ?? '').trim();
+      const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+      const {qty} = body;
+      if (typeof key !== 'string' || key.length < 6 || !Number.isSafeInteger(qty) || qty < 1 || !reason || reason.length > 240) {
+        throw new DomainError(400, 'Scan the garment and enter a quantity and reason');
+      }
+      const eventKey = 'pos-return:' + id + ':' + key;
+      const fingerprint = JSON.stringify({barcode, qty, reason, sellable:body.sellable===true});
+      const previous = this.getIdempotent(eventKey, fingerprint);
+      if (previous) return previous;
+      const item = sale.items.find(line => line.barcode === barcode);
+      if (!item) throw new DomainError(400, 'This barcode is not on the original bill');
+      if (body.sellable !== true) throw new DomainError(400, 'Confirm the garment is sellable before restocking');
+      const returned = (sale.returns || []).filter(entry => entry.sku === item.sku).reduce((sum, entry) => sum + entry.qty, 0);
+      if (qty + returned > item.qty) throw new DomainError(409, 'Return exceeds the remaining quantity on the bill');
+      const warehouse = this.locations.find(entry => entry.id === 'warehouse-hyd' && entry.type === 'warehouse');
+      if (!warehouse) throw new DomainError(409, 'Returns warehouse is unavailable');
+      const balances = this.stock[item.sku];
+      const before = balances[warehouse.id] || 0;
+      if (before + qty > 2147483647) throw new DomainError(409, 'Warehouse stock limit exceeded');
+
+      // Legacy bills stored the promotion at bill level. Allocate it across lines before splitting units.
+      const paid = sale.quote.gstRate === 5 ? cents(item.lineTotal) : (() => {
+        const beforeLine = sale.items.slice(0, sale.items.indexOf(item)).reduce((sum, line) => sum + cents(line.lineTotal), 0);
+        const paidThrough = amount => Math.round(amount * cents(sale.quote.total) / cents(sale.quote.subtotal));
+        return paidThrough(beforeLine + cents(item.lineTotal)) - paidThrough(beforeLine);
+      })();
+      const share = amount => Math.round(amount * (returned + qty) / item.qty) - Math.round(amount * returned / item.qty);
+      const refund = share(paid);
+      const entry = {id: randomUUID(), sku: item.sku, barcode, qty, reason, refund: rupees(refund),
+        gst: rupees(item.gst === undefined ? 0 : share(cents(item.gst))), status: 'mock_refunded',
+        locationId: warehouse.id, at: new Date(this.orderNow()).toISOString(), staffId: session.userId};
+      balances[warehouse.id] = before + qty;
+      this.ledger.push({id: randomUUID(), sku: item.sku, locationId: warehouse.id, delta: qty,
+        before, after: before + qty, reason: 'POS_RETURN_RESTOCK', ref: entry.id, at: entry.at});
+      sale.returns = [...(sale.returns || []), entry];
+      this.event(session, 'POS_RETURN_RESTOCKED', id);
+      const result = {sale: structuredClone(sale), return: entry};
+      this.setIdempotent(eventKey, fingerprint, result);
+      return result;
+    });
+  },
+
+  posReceiptTerms() {
+    return receiptTerms;
+  }
+};

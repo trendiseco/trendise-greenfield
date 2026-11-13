@@ -9,13 +9,14 @@ test('fresh demo catalogue uses unique barcodes per SKU',()=>{const app=c();asse
 test('store sale atomically reduces customer-visible inventory',async()=>{
  const app=c(),sku=app.products[0].variants[0].sku;const before=app.available(sku);
  const session=app.session(app.staffLogin('pos','1234').token,['pos']);
- const response=await app.completePosSale(session,{items:[{sku,qty:1}],coupon:'STORE10',paymentMethod:'Cash',idempotencyKey:'test-pos-01'});
+ app.savePosPromotion({role:'superadmin'},{sku,type:'percent',value:10});
+ const response=await app.completePosSale(session,{items:[{sku,qty:1}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'Cash',idempotencyKey:'test-pos-01'});
  assert.equal(response.sale.quote.discount,149.9);assert.equal(app.available(sku),before-1);
  assert.equal(app.stock[sku]['store-hyd-01'],3);assert.equal(app.ledger.at(-1).reason,'MOCK_POS_SALE');
 });
 test('duplicate POS submission does not duplicate stock deduction',async()=>{
  const app=c(),sku=app.products[0].variants[0].sku,session=app.session(app.staffLogin('pos','1234').token);
- const body={items:[{sku,qty:1}],paymentMethod:'UPI',idempotencyKey:'duplicate-pos-001'};
+ const body={items:[{sku,qty:1}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'UPI',idempotencyKey:'duplicate-pos-001'};
  const [a,b]=await Promise.all([app.completePosSale(session,body),app.completePosSale(session,body)]);
  assert.equal(a.sale.id,b.sale.id);assert.equal(app.available(sku),9);assert.equal(app.ledger.length,1);
 });
@@ -52,7 +53,7 @@ test('warehouse rejects wrong pick code and barcode; dispatch blocked until full
 test('customer account cannot access POS or warehouse actions',async()=>{const app=c(),session=signin(app);await assert.rejects(()=>app.completePosSale(session,{items:[],idempotencyKey:'xabc123'}),e=>e.status===403);});
 test('cannot oversell last store unit, even with simultaneous POS requests',async()=>{
  const app=c(),sku=app.products[0].variants[0].sku,session=app.session(app.staffLogin('pos','1234').token);
- const run=key=>app.completePosSale(session,{items:[{sku,qty:3}],paymentMethod:'Cash',idempotencyKey:key});
+ const run=key=>app.completePosSale(session,{items:[{sku,qty:3}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'Cash',idempotencyKey:key});
  const outcomes=await Promise.allSettled([run('pos-parallel-a'),run('pos-parallel-b')]);
  assert.equal(outcomes.filter(x=>x.status==='fulfilled').length,1);
  assert.equal(app.stock[sku]['store-hyd-01'],1);assert.equal(app.ledger.length,1);
@@ -60,8 +61,8 @@ test('cannot oversell last store unit, even with simultaneous POS requests',asyn
 
 test('idempotency key cannot be reused for a different financial request',async()=>{
  const app=c(),sku=app.products[0].variants[0].sku,session=app.session(app.staffLogin('pos','1234').token);
- await app.completePosSale(session,{items:[{sku,qty:1}],paymentMethod:'Cash',idempotencyKey:'pos-immutable-key'});
- await assert.rejects(()=>app.completePosSale(session,{items:[{sku,qty:2}],paymentMethod:'Cash',idempotencyKey:'pos-immutable-key'}),e=>e.code==='IDEMPOTENCY_CONFLICT');
+ await app.completePosSale(session,{items:[{sku,qty:1}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'Cash',idempotencyKey:'pos-immutable-key'});
+ await assert.rejects(()=>app.completePosSale(session,{items:[{sku,qty:2}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'Cash',idempotencyKey:'pos-immutable-key'}),e=>e.code==='IDEMPOTENCY_CONFLICT');
  assert.equal(app.ledger.length,1);
 });
 test('store POS cannot sell inventory already reserved online at its location',async()=>{
@@ -69,6 +70,6 @@ test('store POS cannot sell inventory already reserved online at its location',a
  // Hold 9 pieces, allocating 6 warehouse and 3 store.
  await app.startCheckout(session,{items:[{sku,qty:9}],address,acceptedPolicyVersion:app.version});
  const pos=app.session(app.staffLogin('pos','1234').token);
- await assert.rejects(()=>app.completePosSale(pos,{items:[{sku,qty:2}],paymentMethod:'Cash',idempotencyKey:'held-online-key'}),e=>e.code==='INSUFFICIENT_STOCK');
+ await assert.rejects(()=>app.completePosSale(pos,{items:[{sku,qty:2}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'Cash',idempotencyKey:'held-online-key'}),e=>e.code==='INSUFFICIENT_STOCK');
  assert.equal(app.available(sku),1);
 });

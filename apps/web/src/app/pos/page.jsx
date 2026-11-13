@@ -1,20 +1,109 @@
 'use client';
-import {useEffect,useMemo,useState} from 'react';
+import {useEffect,useMemo,useRef,useState} from 'react';
 import ProductVisual from '../../components/ProductVisual';
+import PosHistory,{PosReceipt,PosSaleList} from '../../components/PosHistory';
 import {api,cash,uniqueKey} from '../../lib/api';
+
+const periods={today:'Today',week:'This week',month:'This month',year:'This year'};
+
+function Dashboard({token,onReceipt}) {
+ const [period,setPeriod]=useState('today'),[report,setReport]=useState(null),[error,setError]=useState('');
+ useEffect(()=>{
+  const controller=new AbortController();
+  api('/api/pos/dashboard?period='+period,{token,signal:controller.signal}).then(setReport).catch(error=>{
+   if(!controller.signal.aborted)setError(error.message);
+  });
+  return ()=>controller.abort();
+ },[period,token]);
+ return <section className="staff-panel pos-history"><h2>Store sales dashboard</h2>
+  <label>Period<select value={period} onChange={event=>{setReport(null);setError('');setPeriod(event.target.value);}}>{Object.entries(periods).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
+  <p>India time · Weeks start on Monday.</p>
+  {error&&<p role="alert" className="error-box">{error}</p>}
+  {report&&<><div className="metric-row">{[['Bills',report.sales.length],['Customers',report.customers],['Gross sales',cash(report.gross)],['Mock refunds',cash(report.refunded)],['Net sales',cash(report.net)]].map(([label,value])=><div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div><PosSaleList sales={report.sales} onReceipt={onReceipt}/></>}
+ </section>;
+}
+
 export default function Pos(){
- const [token,setToken]=useState(''),[pin,setPin]=useState(''),[products,setProducts]=useState([]),[stock,setStock]=useState({}),[scan,setScan]=useState(''),[cart,setCart]=useState([]),[coupon,setCoupon]=useState(''),[method,setMethod]=useState('UPI'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[receipt,setReceipt]=useState(null),[search,setSearch]=useState('');
- const all=useMemo(()=>products.flatMap(p=>p.variants.map(v=>({...v,product:p}))),[products]);
- const refresh=async(t=token)=>{if(!t)return;try{const r=await api('/api/pos/inventory',{token:t});setProducts(r.products);setStock(r.stock);}catch(e){setError(e.message);}};
+ const [token,setToken]=useState(''),[pin,setPin]=useState(''),[userId,setUserId]=useState(''),[inventory,setInventory]=useState(null);
+ const [scan,setScan]=useState(''),[cart,setCart]=useState([]),[name,setName]=useState(''),[phone,setPhone]=useState('');
+ const [method,setMethod]=useState('UPI'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[receipt,setReceipt]=useState(null),[search,setSearch]=useState(''),[tab,setTab]=useState('billing');
+ const [scanStatus,setScanStatus]=useState('');
+ const scanner=useRef(null),attempt=useRef(null),saving=useRef(false);
+ const all=useMemo(()=>inventory?.products.flatMap(product=>product.variants.map(variant=>({...variant,product})))||[],[inventory]);
+ const refresh=async(t=token)=>{try{setInventory(await api('/api/pos/inventory',{token:t}));}catch(error){setError(error.message);}};
  useEffect(()=>{const t=sessionStorage.getItem('trd_pos_token');if(t){setToken(t);refresh(t);}},[]);
- const login=async()=>{setBusy(true);setError('');try{const r=await api('/api/auth/staff',{method:'POST',body:JSON.stringify({role:'pos',pin})});sessionStorage.setItem('trd_pos_token',r.token);setToken(r.token);await refresh(r.token);}catch(e){setError(e.message);}finally{setBusy(false);}};
- const add=variant=>{const remaining=stock[variant.sku]?.['store-hyd-01']??0;const present=cart.find(x=>x.sku===variant.sku);if((present?.qty||0)>=remaining){setError('Store stock is insufficient for this variant.');return;}setCart(c=>present?c.map(x=>x.sku===variant.sku?{...x,qty:x.qty+1}:x):[...c,{sku:variant.sku,qty:1,variant,product:variant.product}]);setError('');};
- const scanBarcode=()=>{const match=all.find(v=>v.barcode.toUpperCase()===scan.trim().toUpperCase()||v.sku.toUpperCase()===scan.trim().toUpperCase());if(match){add(match);setScan('');}else setError('Unknown barcode / SKU. Scan a variant from the demo catalog.');};
- const changeQty=(sku,delta)=>{const item=cart.find(x=>x.sku===sku),max=stock[sku]?.['store-hyd-01']??0;const qty=Math.max(0,Math.min(max,item.qty+delta));setCart(c=>c.map(x=>x.sku===sku?{...x,qty}:x).filter(x=>x.qty>0));};
- const subtotal=cart.reduce((a,x)=>a+x.qty*x.variant.price,0);const discount=coupon==='STORE10'?subtotal*.10:coupon==='STORE20'?subtotal*.20:0;const total=subtotal-discount;
- const complete=async()=>{setBusy(true);setError('');try{const r=await api('/api/pos/sales',{method:'POST',token,headers:{'x-idempotency-key':uniqueKey()},body:JSON.stringify({items:cart.map(x=>({sku:x.sku,qty:x.qty})),coupon,paymentMethod:method})});setReceipt(r.sale);setCart([]);setCoupon('');await refresh(token);}catch(e){setError(e.message);}finally{setBusy(false);}};
- const logout=()=>{sessionStorage.removeItem('trd_pos_token');setToken('');setCart([]);setReceipt(null);};
- if(!token)return <main className="container staff-login-page"><div className="staff-login-card"><span className="panel-icon">▦</span><div className="eyebrow">TRENDISE / STORE OPERATIONS</div><h1>Store <em>POS.</em></h1><p>Authorized store employees only. This is a mock cashier environment with simulated transactions.</p><label>DEMO STAFF PIN<input value={pin} onChange={e=>setPin(e.target.value)} placeholder="Enter 1234" type="password" onKeyDown={e=>e.key==='Enter'&&login()}/></label><button onClick={login} disabled={busy} className="button button-dark full">SIGN IN TO REGISTER ↗</button><p className="demo-credentials">DEVELOPMENT PIN: 1234 · NO REAL PAYMENTS</p>{error&&<div className="error-box">{error}</div>}</div></main>;
- return <main className="staff-shell"><div className="staff-page-header"><div><div className="eyebrow">STORE / HYDERABAD 01</div><h1>Point of <em>sale.</em></h1><p>Barcode-first billing with centralized, real-time mock stock.</p></div><button className="small-outline" onClick={logout}>SIGN OUT ↗</button></div><div className="pos-layout"><section className="staff-panel pos-products"><div className="panel-heading"><h2>Find a product</h2><span>{all.length} SELLABLE VARIANTS</span></div><div className="scanner-row"><input autoFocus placeholder="Scan or enter SKU, e.g. SH-OXF-SKY-M" value={scan} onChange={e=>setScan(e.target.value)} onKeyDown={e=>e.key==='Enter'&&scanBarcode()}/><button onClick={scanBarcode}>SCAN / ADD ↗</button></div><div className="pos-search"><input placeholder="e.g. Oxford, M or Sky Blue" value={search} onChange={e=>setSearch(e.target.value)}/></div><div className="pos-product-grid">{all.filter(v=>`${v.product.name} ${v.size} ${v.color} ${v.sku}`.toLowerCase().includes(search.toLowerCase())).slice(0,48).map(v=><button className="pos-product" key={v.sku} onClick={()=>add(v)}><ProductVisual compact product={v.product}/><span className="pos-product-info"><strong>{v.product.name}</strong><small>{v.color} / {v.size}</small><b>{cash(v.price)}</b><em>{stock[v.sku]?.['store-hyd-01']??0} IN STORE</em></span></button>)}</div></section><aside className="staff-panel pos-register"><div className="panel-heading"><h2>Current sale</h2><span>{cart.reduce((n,x)=>n+x.qty,0)} ITEMS</span></div>{!cart.length?<div className="pos-empty"><span>◎</span><h3>Start scanning.</h3><p>Scan a garment barcode or select a product to add it to this bill.</p></div>:<div className="pos-bill-lines">{cart.map(item=><div className="pos-bill-row" key={item.sku}><div><strong>{item.product.name}</strong><small>{item.variant.color} / {item.variant.size} — {item.sku}</small><div className="qty-control"><button onClick={()=>changeQty(item.sku,-1)}>−</button><span>{item.qty}</span><button onClick={()=>changeQty(item.sku,1)}>+</button></div></div><b>{cash(item.qty*item.variant.price)}</b></div>)}</div>}
- <div className="pos-register-bottom"><label>IN-STORE PROMOTION<select value={coupon} onChange={e=>setCoupon(e.target.value)}><option value="">No discount</option><option value="STORE10">STORE10 — 10% off</option><option value="STORE20">STORE20 — 20% off</option></select></label><label>PAYMENT METHOD<select value={method} onChange={e=>setMethod(e.target.value)}><option>Cash</option><option>UPI</option><option>Card</option></select></label><div className="summary-row"><span>SUBTOTAL</span><strong>{cash(subtotal)}</strong></div><div className="summary-row"><span>STORE DISCOUNT</span><strong>− {cash(discount)}</strong></div><div className="pos-grand"><span>DEMO TOTAL</span><strong>{cash(total)}</strong></div><button className="button button-dark full" disabled={busy||!cart.length} onClick={complete}>{busy?'FINALIZING…':'COMPLETE MOCK SALE'} ↗</button><p className="summary-help">No Razorpay or real card/UPI collection. Sales deduct store inventory in the shared mock API.</p>{error&&<div role="alert" className="error-box">{error}</div>}{receipt&&<div className="success-box"><strong>✓ DEMO SALE COMPLETED</strong><br/>{receipt.id} · {cash(receipt.quote.total)} · {receipt.payment.method}<br/><small>Stock was deducted from store inventory.</small><button className="text-button" onClick={()=>setReceipt(null)}>DISMISS</button></div>}</div></aside></div></main>;
+ async function login(event){
+  event.preventDefault();setBusy(true);setError('');
+  try{const r=await api('/api/auth/staff',{method:'POST',body:JSON.stringify({role:'pos',pin,userId:userId.trim()||'pos'})});sessionStorage.setItem('trd_pos_token',r.token);setToken(r.token);await refresh(r.token);}
+  catch(error){setError(error.message);}finally{setBusy(false);}
+ }
+ function add(variant){
+  if(busy)return;
+  const existing=cart.find(line=>line.sku===variant.sku);
+  if((existing?.qty||0)>=Math.min(25,variant.available)){setError('Store stock or bill quantity limit reached for this variant.');return;}
+  setCart(lines=>existing?lines.map(line=>line.sku===variant.sku?{...line,qty:line.qty+1}:line):[...lines,{sku:variant.sku,qty:1,variant}]);
+  setScanStatus(`Added ${variant.product.name}, ${variant.color}, ${variant.size} at ${cash(variant.salePrice)}.`);setError('');
+ }
+ function scanBarcode(event){
+  event.preventDefault();const code=scan.trim();
+  const match=all.find(variant=>variant.barcode===code)||all.find(variant=>variant.sku.toUpperCase()===code.toUpperCase());
+  if(match){add(match);setScan('');}else setError('Unknown barcode or SKU.');
+  scanner.current?.focus();
+ }
+ function changeQty(sku,delta){
+  const line=cart.find(item=>item.sku===sku),variant=all.find(item=>item.sku===sku);
+  if(delta>0){if(variant)add(variant);return;}
+  setCart(lines=>line.qty===1?lines.filter(item=>item.sku!==sku):lines.map(item=>item.sku===sku?{...item,qty:item.qty-1}:item));
+ }
+ const lines=cart.map(line=>({...line,variant:all.find(variant=>variant.sku===line.sku)||line.variant}));
+ const cents=value=>Math.round(value*100);
+ const subtotal=lines.reduce((sum,line)=>sum+cents(line.variant.regularPrice)*line.qty,0);
+ const total=lines.reduce((sum,line)=>sum+cents(line.variant.salePrice)*line.qty,0);
+ const gst=lines.reduce((sum,line)=>sum+Math.round(cents(line.variant.salePrice)*line.qty*5/105),0);
+ async function complete(event){
+  event.preventDefault();if(saving.current||!cart.length)return;
+  const body=JSON.stringify({items:cart.map(({sku,qty})=>({sku,qty})),customer:{name,phone},paymentMethod:method,expectedTotal:total/100});
+  if(attempt.current?.body!==body)attempt.current={body,key:uniqueKey()};
+  saving.current=true;setBusy(true);setError('');
+  try{
+   const result=await api('/api/pos/sales',{method:'POST',token,headers:{'x-idempotency-key':attempt.current.key},body});
+   setReceipt(result.sale);window.scrollTo(0,0);setCart([]);setName('');setPhone('');setScanStatus('');attempt.current=null;await refresh();
+  }catch(error){setError(error.message);if(error.status===409)await refresh();}
+  finally{saving.current=false;setBusy(false);}
+ }
+ function openReceipt(sale){setReceipt(sale);window.scrollTo(0,0);}
+ function logout(){sessionStorage.removeItem('trd_pos_token');setToken('');setCart([]);setReceipt(null);setName('');setPhone('');setUserId('');setPin('');setScan('');setSearch('');setInventory(null);setError('');setScanStatus('');setTab('billing');attempt.current=null;}
+ if(!token)return <main className="container staff-login-page"><form className="staff-login-card" onSubmit={login}><div className="eyebrow">TRENDISE / STORE OPERATIONS</div><h1>Store <em>POS.</em></h1><label>Staff ID<input value={userId} onChange={event=>setUserId(event.target.value)} placeholder="e.g. pos"/></label><label>Demo staff PIN<input required value={pin} onChange={event=>setPin(event.target.value)} placeholder="e.g. 1234" type="password"/></label><button disabled={busy} className="button button-dark full">Sign in to register</button>{error&&<p className="error-box" role="alert">{error}</p>}</form></main>;
+ return <main className="staff-shell pos-workspace">
+  {receipt&&<PosReceipt sale={receipt} onClose={()=>{setReceipt(null);scanner.current?.focus();}}/>}
+  <div className="pos-print-hide">
+   <div className="staff-page-header"><div><div className="eyebrow">{inventory?.locationName||'STORE'}</div><h1>Point of <em>sale.</em></h1><p>Development register · payments and refunds are simulated.</p></div><button disabled={busy} className="small-outline" onClick={logout}>Sign out</button></div>
+   <nav aria-label="Store POS" className="cms-tabs">{Object.entries({billing:'Billing',dashboard:'Dashboard',customers:'Customer search & returns'}).map(([key,label])=><button disabled={busy} key={key} aria-pressed={tab===key} onClick={()=>{setError('');setTab(key);}}>{label}</button>)}</nav>
+   {error&&<p role="alert" className="error-box">{error}</p>}
+   {tab==='dashboard'&&<Dashboard token={token} onReceipt={openReceipt}/>}
+   {tab==='customers'&&<PosHistory token={token} onReceipt={openReceipt} onInventoryChanged={()=>{setReceipt(null);refresh();}}/>}
+   {tab==='billing'&&<>
+    <section className="staff-panel pos-scan-panel"><form className="scanner-row" onSubmit={scanBarcode}>
+     <label>Scan garment barcode<input ref={scanner} autoFocus autoComplete="off" value={scan} disabled={busy} onChange={event=>setScan(event.target.value)} placeholder="e.g. 0012345678905"/></label><button disabled={!scan.trim()||busy}>Add to bill</button>
+    </form><p role="status">{scanStatus||'A keyboard-mode scanner adds the garment when it sends Enter.'}</p></section>
+    <div className="pos-layout"><section className="staff-panel pos-products"><div className="panel-heading"><h2>Find a product</h2><button disabled={busy} onClick={()=>refresh()}>Refresh stock & prices</button></div>
+     <div className="pos-search"><input aria-label="Search products" placeholder="e.g. Oxford, M or Sky Blue" value={search} onChange={event=>setSearch(event.target.value)}/></div>
+     <div className="pos-product-grid">{all.filter(variant=>`${variant.product.name} ${variant.size} ${variant.color} ${variant.sku}`.toLowerCase().includes(search.toLowerCase())).slice(0,48).map(variant=><button className="pos-product" key={variant.sku} onClick={()=>add(variant)} disabled={busy||!variant.available}><ProductVisual compact product={variant.product}/><span className="pos-product-info"><strong>{variant.product.name}</strong><small>{variant.color} / {variant.size}</small><b>{variant.salePrice<variant.regularPrice&&<del>{cash(variant.regularPrice)} </del>}{cash(variant.salePrice)}</b><em>{variant.available} in store</em></span></button>)}</div>
+    </section><aside className="staff-panel pos-register">
+     <div className="panel-heading"><h2>Current bill</h2><span>{cart.reduce((sum,item)=>sum+item.qty,0)} items</span></div>
+     <div className="pos-bill-lines">{lines.map(({sku,qty,variant})=><div className="pos-bill-row" key={sku}><div><strong>{variant.product.name}</strong><small>{variant.color} / {variant.size} · {sku}</small><div className="qty-control"><button aria-label={`Remove one ${sku}`} disabled={busy} onClick={()=>changeQty(sku,-1)}>−</button><span>{qty}</span><button aria-label={`Add one ${sku}`} disabled={busy} onClick={()=>changeQty(sku,1)}>+</button></div></div><b>{cash(qty*variant.salePrice)}</b></div>)}</div>
+     <form className="pos-register-bottom" onSubmit={complete}>
+      <label>Customer name<input required maxLength={100} disabled={busy} value={name} onChange={event=>setName(event.target.value)} placeholder="e.g. Asha Sharma"/></label>
+      <label>Customer mobile<input required type="tel" disabled={busy} value={phone} onChange={event=>setPhone(event.target.value)} placeholder="e.g. 9876543210"/></label>
+      <label>Payment method<select disabled={busy} value={method} onChange={event=>setMethod(event.target.value)}><option>Cash</option><option>UPI</option><option>Card</option></select></label>
+      <div className="summary-row"><span>Subtotal</span><strong>{cash(subtotal/100)}</strong></div>
+      <div className="summary-row"><span>Store discount</span><strong>{cash((subtotal-total)/100)}</strong></div>
+      <div className="summary-row"><span>Included GST (5%)</span><strong>{cash(gst/100)}</strong></div>
+      <div className="pos-grand"><span>Total</span><strong>{cash(total/100)}</strong></div>
+      <button className="button button-dark full" disabled={busy||!cart.length}>{busy?'Saving…':'Save bill'}</button>
+     </form>
+    </aside></div>
+   </>}
+  </div>
+ </main>;
 }

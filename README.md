@@ -42,7 +42,7 @@ Customer: request OTP with a fictional Indian mobile, enter `123456`. Default st
 
 Admin may edit and submit catalog and inspect inventory; Super Admin approves a different user's submission, manages access and receives/transfers mock stock. Admin retains M01 POS and warehouse permissions unless removed in the role editor. Customers cannot edit catalog, staff or inventory.
 
-Mock coupons remain `WELCOME10` online and `STORE10` / `STORE20` at POS. Payment simulation never charges money; warehouse dispatch never contacts a courier. Maps and AI remain unconnected.
+Website coupons and Super Admin’s automatic POS promotions are configured separately. Payment simulation never charges money; warehouse dispatch never contacts a courier. Maps and AI remain unconnected.
 
 ## Review the flows
 
@@ -51,6 +51,14 @@ Mock coupons remain `WELCOME10` online and `STORE10` / `STORE20` at POS. Payment
 3. Receive mock stock for the new SKU at warehouse/store using Super Admin inventory controls. POS sales and online reservations now share those balances. A transfer cannot move reserved units.
 4. Place a mock website order using the current T&C, confirm mock payment, then open warehouse. Print pick list and scan matching order line and garment barcode before mock dispatch.
 5. Restart the API. Catalog, staff, stock, reservations, orders and sale idempotency survive. Browser session tokens also remain valid until access is revoked.
+
+## Store POS
+
+1. In Admin → Products, set **Store POS Price** per size and colour. Submit for independent approval as usual. Blank prices use the website price.
+2. In Super Admin → **Store POS promotions**, select a published variant and enter a percentage off or a flat final price. The register applies it automatically.
+3. Open `/pos`, sign in with the assigned demo staff ID, and use the top barcode field. A keyboard-mode scanner should send Enter after the barcode. Enter the customer name and Indian mobile number, choose a simulated payment method, and save the bill. Print from the saved receipt. Prices include the configured development GST of 5%.
+4. **Dashboard** filters saved bills by day, Monday-start week, month or year in India time. **Customer search** in POS and Admin shows matching store bills and website orders. POS store-bill access is scoped to the assigned store. Older bills saved without a mobile number remain available in the dashboard by date.
+5. Open a store bill in POS customer history to scan and accept a sellable return. Confirm tags and condition and enter the quantity and reason. Stock is posted directly to Hyderabad Warehouse, so use this action when the goods are ready for warehouse stock. Returns cannot exceed the original sold quantity, and refunds are simulated.
 
 ## Checks
 
