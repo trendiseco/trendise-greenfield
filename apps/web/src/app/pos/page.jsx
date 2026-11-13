@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useMemo,useRef,useState} from 'react';
-import ProductVisual from '../../components/ProductVisual';
+import StorePhoto from '../../components/StorePhoto';
 import PosHistory,{PosReceipt,PosSaleList} from '../../components/PosHistory';
 import {api,cash,uniqueKey} from '../../lib/api';
 
@@ -88,10 +88,10 @@ export default function Pos(){
     </form><p role="status">{scanStatus||'A keyboard-mode scanner adds the garment when it sends Enter.'}</p></section>
     <div className="pos-layout"><section className="staff-panel pos-products"><div className="panel-heading"><h2>Find a product</h2><button disabled={busy} onClick={()=>refresh()}>Refresh stock & prices</button></div>
      <div className="pos-search"><input aria-label="Search products" placeholder="e.g. Oxford, M or Sky Blue" value={search} onChange={event=>setSearch(event.target.value)}/></div>
-     <div className="pos-product-grid">{all.filter(variant=>`${variant.product.name} ${variant.size} ${variant.color} ${variant.sku}`.toLowerCase().includes(search.toLowerCase())).slice(0,48).map(variant=><button className="pos-product" key={variant.sku} onClick={()=>add(variant)} disabled={busy||!variant.available}><ProductVisual compact product={variant.product}/><span className="pos-product-info"><strong>{variant.product.name}</strong><small>{variant.color} / {variant.size}</small><b>{variant.salePrice<variant.regularPrice&&<del>{cash(variant.regularPrice)} </del>}{cash(variant.salePrice)}</b><em>{variant.available} in store</em></span></button>)}</div>
+     <div className="pos-product-grid">{all.filter(variant=>`${variant.product.name} ${variant.size} ${variant.color} ${variant.sku}`.toLowerCase().includes(search.toLowerCase())).slice(0,48).map(variant=><button className="pos-product" key={variant.sku} onClick={()=>add(variant)} disabled={busy||!variant.available}><StorePhoto className="pos-product-photo" product={variant.product} color={variant.color}/><span className="pos-product-info"><strong>{variant.product.name}</strong><small>{variant.color} / {variant.size}</small><b>{variant.salePrice<variant.regularPrice&&<del>{cash(variant.regularPrice)} </del>}{cash(variant.salePrice)}</b><em>{variant.available} in store</em></span></button>)}</div>
     </section><aside className="staff-panel pos-register">
      <div className="panel-heading"><h2>Current bill</h2><span>{cart.reduce((sum,item)=>sum+item.qty,0)} items</span></div>
-     <div className="pos-bill-lines">{lines.map(({sku,qty,variant})=><div className="pos-bill-row" key={sku}><div><strong>{variant.product.name}</strong><small>{variant.color} / {variant.size} · {sku}</small><div className="qty-control"><button aria-label={`Remove one ${sku}`} disabled={busy} onClick={()=>changeQty(sku,-1)}>−</button><span>{qty}</span><button aria-label={`Add one ${sku}`} disabled={busy} onClick={()=>changeQty(sku,1)}>+</button></div></div><b>{cash(qty*variant.salePrice)}</b></div>)}</div>
+     <div className="pos-bill-lines">{lines.map(({sku,qty,variant})=><div className="pos-bill-row" key={sku}><div className="pos-bill-item"><StorePhoto className="pos-bill-photo" product={variant.product} color={variant.color}/><div><strong>{variant.product.name}</strong><small>{variant.color} / {variant.size} · {sku}</small><div className="qty-control"><button aria-label={`Remove one ${sku}`} disabled={busy} onClick={()=>changeQty(sku,-1)}>−</button><span>{qty}</span><button aria-label={`Add one ${sku}`} disabled={busy} onClick={()=>changeQty(sku,1)}>+</button></div></div></div><b>{cash(qty*variant.salePrice)}</b></div>)}</div>
      <form className="pos-register-bottom" onSubmit={complete}>
       <label>Customer name<input required maxLength={100} disabled={busy} value={name} onChange={event=>setName(event.target.value)} placeholder="e.g. Asha Sharma"/></label>
       <label>Customer mobile<input required type="tel" disabled={busy} value={phone} onChange={event=>setPhone(event.target.value)} placeholder="e.g. 9876543210"/></label>

@@ -1,3 +1,8 @@
+.pos-product .pos-product-photo { height: 156px; flex: none; }
+.pos-product-photo img, .pos-bill-photo img { object-position: center top; }
+.pos-bill-item { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.pos-bill-item .pos-bill-photo { width: 48px; height: 60px; flex: none; }
+.pos-bill-photo .photo-unavailable > * { display: none; }
 .pos-scan-panel { margin-bottom: 20px; }
 .pos-scan-panel .scanner-row, .pos-history .scanner-row { align-items: end; }
 .pos-scan-panel .scanner-row label, .pos-history .scanner-row label { flex: 1; }
