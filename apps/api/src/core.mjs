@@ -151,7 +151,7 @@ export class Commerce {
   ordersFor(session) {if(session.role==='customer')return [...this.orders.values()].filter(o=>o.phone===session.phone).map(o=>({...clone(o),...orderEligibility(o,this.orderNow())}));if(['warehouse','admin','superadmin'].includes(session.role))return [...this.orders.values()].map(clone);throw new DomainError(403,'Cannot view orders');}
   warehouseQueue(session){
     this.permit(session,'warehouse.fulfill');
-    return [...this.orders.values()].reverse().map(order=>({id:order.id,status:order.status,placedAt:order.placedAt,lineCount:order.items.length,hasReturns:Boolean(order.returnRequests?.length||order.returnRequest),units:order.items.reduce((sum,item)=>sum+item.qty,0)}));
+    return [...this.orders.values()].reverse().map(order=>({id:order.id,status:order.status,placedAt:order.placedAt,lineCount:order.items.length,hasReturns:Boolean(order.returnRequests?.length||order.returnRequest),trackingRevision:order.shiprocketOrder?.revision,units:order.items.reduce((sum,item)=>sum+item.qty,0)}));
   }
   warehouseOrder(session,orderId){
     this.permit(session,'warehouse.fulfill');

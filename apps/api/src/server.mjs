@@ -1,3 +1,4 @@
+import {authorizeShipmentEvent,applyShipmentEvent} from './shipment-events.mjs';
 import {createShiprocketLookup} from './shiprocket.mjs';
 import {adminDashboard} from './admin-dashboard.mjs';
 import {policyDocument} from '../../../shared/order-policy.mjs';
@@ -37,6 +38,10 @@ const handle=async (req,res)=>{
   const url=new URL(req.url,'http://localhost'),path=url.pathname;
   const is=(method,route)=>req.method===method&&path===route;
   try{
+    if(is('POST','/api/delivery/events')){
+      authorizeShipmentEvent(process.env.SHIPROCKET_WEBHOOK_SECRET,req.headers['x-api-key']);
+      return respond(res,200,applyShipmentEvent(core,await bodyOf(req)));
+    }
     if(is('GET','/api/health'))return respond(res,200,core.health());
     if(is('GET','/api/products'))return respond(res,200,{products:core.listing()});
     if(is('GET','/api/website'))return respond(res,200,core.websitePublic());

@@ -4,6 +4,7 @@ import {api,cash} from '../lib/api';
 import {orderCases,orderListLabels,orderStatusLabels,orderRequestStatus} from '../../../../shared/admin-orders.mjs';
 import {paymentLabels,returnReasons,orderEligibility} from '../../../../shared/order-policy.mjs';
 import ReturnOutcome from './ReturnOutcome';
+import ShipmentTracking from './ShipmentTracking';
 import OrderCharges from './OrderCharges';
 
 const date=value=>value?new Date(value).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',dateStyle:'medium',timeStyle:'short'})+' IST':'—';
@@ -21,6 +22,14 @@ export default function AdminOrders({token,filter,onFilter,onReviewed}){
   api('/api/admin/orders/'+selected,{token,signal:control.signal}).then(data=>{if(!control.signal.aborted)D(data);}).catch(e=>{if(!control.signal.aborted)DE(e.message);});
   return()=>control.abort();
  },[token,selected,reload]);
+ useEffect(()=>{
+  if(!selected||!detail?.shiprocketOrder)return;
+  const controller=new AbortController();
+  const timer=setInterval(()=>{
+   if(!document.hidden)api('/api/admin/orders/'+selected,{token,signal:controller.signal}).then(D).catch(()=>{});
+  },15000);
+  return()=>{controller.abort();clearInterval(timer);};
+ },[selected,token,detail?.shiprocketOrder?.orderId]);
  const submit=async e=>{
   e.preventDefault();if(busy||!detail||!review)return;B(true);DE('');N('');
   try{
@@ -53,6 +62,7 @@ export default function AdminOrders({token,filter,onFilter,onReviewed}){
     <p>{paymentLabels[detail.payment.method||'card']} · {detail.payment.status.replaceAll('_',' ')} · <strong>{cash(detail.quote.total)}</strong></p>
     {detail.payment.split&&<p>{cash(detail.payment.split.upfront)} upfront · {cash(detail.payment.split.remaining)} delivery balance</p>}
     {detail.payment.mockRefundAmount!==undefined&&<p>Simulated upfront refund: {cash(detail.payment.mockRefundAmount)}</p>}
+    <ShipmentTracking shipment={detail.shiprocketOrder} staff/>
     <OrderCharges quote={detail.quote}/>
     <p className="hint">Placed {date(detail.placedAt)}{detail.deliveredAt&&` · Delivered ${date(detail.deliveredAt)}`}</p>
     <p className="hint">Terms: {detail.acceptedPolicyVersion||'Not recorded'}{detail.acceptedAt&&` · Accepted ${date(detail.acceptedAt)}`}</p>

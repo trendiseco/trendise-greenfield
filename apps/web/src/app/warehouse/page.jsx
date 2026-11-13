@@ -8,6 +8,7 @@ import PickBarcode from '../../components/PickBarcode';
 import StorePhoto from '../../components/StorePhoto';
 import WarehouseInventory from '../../components/WarehouseInventory';
 import ReturnOutcome from '../../components/ReturnOutcome';
+import ShipmentTracking from '../../components/ShipmentTracking';
 import OrderCharges from '../../components/OrderCharges';
 import {StaffTabs,useStaffSection} from '../../components/StaffWorkspace';
 
@@ -44,13 +45,14 @@ export default function Warehouse(){
   document.addEventListener('visibilitychange',onVisible);
   return()=>{controller.abort();clearInterval(timer);document.removeEventListener('visibilitychange',onVisible);};
  },[token,reload,expireSession]);
- const selectedStatus=orders?.find(row=>row.id===selected)?.status;
+ const selectedRow=orders?.find(row=>row.id===selected);
+ const selectedStatus=selectedRow?.status,trackingRevision=selectedRow?.trackingRevision;
  useEffect(()=>{
   if(!token||!selected)return;
   const controller=new AbortController();
   api('/api/warehouse/orders/'+selected,{token,signal:controller.signal}).then(value=>{if(!controller.signal.aborted)D(value);}).catch(e=>{if(!controller.signal.aborted){if(e.status===401)expireSession();else E(e.message);}});
   return()=>controller.abort();
- },[selected,selectedStatus,token,reload,expireSession]);
+ },[selected,selectedStatus,trackingRevision,token,reload,expireSession]);
  const run=async task=>{if(inFlight.current)return;inFlight.current=true;B(true);E('');M('');try{await task();}catch(e){if(token&&e.status===401)expireSession();else E(e.message);}finally{B(false);inFlight.current=false;}};
  const login=()=>run(async()=>{const r=await api('/api/auth/staff',{method:'POST',body:JSON.stringify({role:'warehouse',pin})});sessionStorage.setItem('trd_warehouse_token',r.token);T(r.token);P('');});
  const action=(name,body)=>api('/api/warehouse/orders/'+order.id+'/'+name,{token,method:'POST',body:JSON.stringify(body)});
@@ -142,6 +144,7 @@ export default function Warehouse(){
      {active&&<><button className="button button-dark full" disabled={busy||held||!verified} onClick={dispatch}>Complete mock dispatch ↗</button><p className="hint">{held?`Dispatch opens ${formatTime(dispatchAfter)}, after the cancellation window.`:'All ordered units must pass both barcode checks before dispatch.'}</p></>}
      {order.status==='shipped'&&<button className="button button-line" disabled={busy} onClick={deliver}>Mark mock delivered</button>}
     </div>
+    <ShipmentTracking shipment={order.shiprocketOrder} staff/>
     {order.shipment&&<p className="shipment-label">Mock AWB: {order.shipment.awb}</p>}
 
    </>}
