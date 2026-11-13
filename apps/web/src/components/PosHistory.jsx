@@ -9,7 +9,7 @@ export function PosReceipt({sale,onClose}) {
  const {quote}=sale;
  return <section className="staff-panel pos-receipt" aria-label="Saved receipt">
   <div className="panel-heading"><h2>TRENDISE · Store receipt</h2><div className="button-row pos-print-hide"><button onClick={()=>window.print()}>Print bill</button><button onClick={onClose}>Close receipt</button></div></div>
-  <p>{sale.id} · {sale.locationName||sale.locationId} · {saleDate(sale.at)}</p>
+  <p>{sale.example&&'Sample bill · '}{sale.id} · {sale.locationName||sale.locationId} · {saleDate(sale.at)}</p>
   <p>{sale.customer ? `${sale.customer.name} · ${sale.customer.phone}` : 'Customer details unavailable on this older bill'}{sale.staffId&&` · Cashier ${sale.staffId}`}</p>
   <BillItems items={sale.items}/>
   <dl><dt>Subtotal</dt><dd>{cash(quote.subtotal)}</dd><dt>Discount</dt><dd>{cash(quote.discount)}</dd>
@@ -57,11 +57,11 @@ function PosReturn({sale,token,onReturned}) {
 
 export function PosSaleList({sales,token,onReceipt,onReturned}) {
  return sales.length ? sales.map(sale=><details key={sale.id} className="pos-history-bill">
-  <summary>{sale.id} · {saleDate(sale.at)} · {sale.customer ? `${sale.customer.name} · ${sale.customer.phone}` : 'Older bill'} · {cash(sale.quote.total)}</summary>
+  <summary>{sale.example&&'Sample · '}{sale.id} · {saleDate(sale.at)} · {sale.customer ? `${sale.customer.name} · ${sale.customer.phone}` : 'Older bill'} · {cash(sale.quote.total)}</summary>
   <p>{sale.payment.method} · {sale.locationName||sale.locationId}{sale.staffId&&` · Cashier ${sale.staffId}`}</p>
-  <BillItems items={sale.items}/><ReturnEntries sale={sale}/>
+  {sale.example&&<p>{sale.example}</p>}<BillItems items={sale.items}/><ReturnEntries sale={sale}/>
   {onReceipt&&<button onClick={()=>onReceipt(sale)}>View / print bill</button>}
-  {onReturned&&sale.items.some(item=>item.qty>(sale.returns||[]).filter(entry=>entry.sku===item.sku).reduce((sum,entry)=>sum+entry.qty,0))&&<PosReturn sale={sale} token={token} onReturned={onReturned}/>}
+  {onReturned&&!sale.example&&sale.items.some(item=>item.qty>(sale.returns||[]).filter(entry=>entry.sku===item.sku).reduce((sum,entry)=>sum+entry.qty,0))&&<PosReturn sale={sale} token={token} onReturned={onReturned}/>}
  </details>) : <p>No store bills found.</p>;
 }
 

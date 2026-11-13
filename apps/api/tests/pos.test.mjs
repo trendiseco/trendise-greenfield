@@ -60,3 +60,24 @@ test('store billing preserves prices, GST, customer history and exact restock ac
  assert.equal(reloaded.posDashboard(cashier,'week').sales.length,0);
  assert.equal(reloaded.posDashboard(cashier,'month').sales.length,1);
 });
+
+test('sample bills are repeat-safe and report by India calendar year without changing inventory', async () => {
+ const app = new Commerce();
+ const cashier = {role:'pos',locationId:'store-hyd-01',userId:'pos'};
+ app.clock = () => new Date('2026-11-14T05:00:00Z');
+ const stock = structuredClone(app.stock);
+ assert.deepEqual(await app.seedPosExamples(cashier),{created:6,count:6});
+ assert.deepEqual(await app.seedPosExamples(cashier),{created:0,count:6});
+ assert.deepEqual(app.stock,stock);
+ assert.deepEqual(app.posDashboard(cashier,'year').years,[2026,2025,2024]);
+ assert.equal(app.posDashboard(cashier,'year','2025').sales.length,2);
+ assert.equal(app.posDashboard(cashier,'year','2024').net,0);
+ const history = app.purchaseHistory(cashier,'9999900001');
+ assert.equal(history.sales.length,6);
+ const bill = history.sales.find(sale => sale.at.startsWith('2026'));
+ await assert.rejects(app.returnPosItem(cashier,bill.id,{},'sample-return'),{status:409});
+ assert.throws(() => app.posDashboard(cashier,'year','2027'),{status:400});
+ app.sales.get(bill.id).at = '2025-12-31T18:30:00.000Z';
+ assert.equal(app.posDashboard(cashier,'year','2025').sales.length,2);
+ assert.equal(app.posDashboard(cashier,'year','2026').sales.length,3);
+});

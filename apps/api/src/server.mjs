@@ -70,7 +70,8 @@ const handle=async (req,res)=>{
     if(is('GET','/api/orders')){const s=core.session(tokenFrom(req),['customer','warehouse','admin','superadmin']);return respond(res,200,{orders:core.ordersFor(s)});}
     if(is('POST','/api/pos/sales')){const s=core.session(tokenFrom(req));const b=await bodyOf(req);return respond(res,201,await core.completePosSale(s,{...b,idempotencyKey:String(req.headers['x-idempotency-key']||b.idempotencyKey||'')}));}
     if(is('GET','/api/pos/inventory'))return respond(res,200,core.posInventory(core.session(tokenFrom(req))));
-    if(is('GET','/api/pos/dashboard'))return respond(res,200,core.posDashboard(core.session(tokenFrom(req)),url.searchParams.get('period')||'today'));
+    if(is('GET','/api/pos/dashboard'))return respond(res,200,core.posDashboard(core.session(tokenFrom(req)),url.searchParams.get('period')||'today',url.searchParams.get('year')));
+    if(is('POST','/api/pos/examples'))return respond(res,200,await core.seedPosExamples(core.session(tokenFrom(req))));
     if(is('POST','/api/pos/customers/search')) {
       const staff=core.session(tokenFrom(req));
       const {phone}=await bodyOf(req);

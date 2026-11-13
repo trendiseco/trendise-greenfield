@@ -4,20 +4,38 @@ import StorePhoto from '../../components/StorePhoto';
 import PosHistory,{PosReceipt,PosSaleList} from '../../components/PosHistory';
 import {api,cash,uniqueKey} from '../../lib/api';
 
-const periods={today:'Today',week:'This week',month:'This month',year:'This year'};
+const periods={today:'Today',week:'This week',month:'This month',year:'This year',previous:'Select a year'};
 
 function Dashboard({token,onReceipt}) {
+ const [year,setYear]=useState(''),[years,setYears]=useState([]),[revision,setRevision]=useState(0),[creating,setCreating]=useState(false),[notice,setNotice]=useState('');
  const [period,setPeriod]=useState('today'),[report,setReport]=useState(null),[error,setError]=useState('');
  useEffect(()=>{
   const controller=new AbortController();
-  api('/api/pos/dashboard?period='+period,{token,signal:controller.signal}).then(setReport).catch(error=>{
+  const query=period==='previous'?'period=year'+(year?'&year='+year:''):'period='+period;
+  api('/api/pos/dashboard?'+query,{token,signal:controller.signal}).then(result=>{
+   setYears(result.years);
+   setReport(result);
+   if(period==='previous'&&!year)setYear(String(result.years.find(value=>value<result.currentYear)??result.currentYear));
+  }).catch(error=>{
    if(!controller.signal.aborted)setError(error.message);
   });
   return ()=>controller.abort();
- },[period,token]);
+ },[period,year,token,revision]);
+ async function createExamples(){
+  setCreating(true);setError('');setNotice('');
+  try {
+   const result=await api('/api/pos/examples',{token,method:'POST'});
+   setNotice(result.created ? `${result.created} sample bills saved. Search 9999900001 to see all of them.` : 'Sample bills are already available. Search 9999900001 to see them.');
+   setRevision(value=>value+1);
+  } catch(error){setError(error.message);}
+  finally{setCreating(false);}
+ }
  return <section className="staff-panel pos-history"><h2>Store sales dashboard</h2>
   <label>Period<select value={period} onChange={event=>{setReport(null);setError('');setPeriod(event.target.value);}}>{Object.entries(periods).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
+  {period==='previous'&&<label>Calendar year<select value={year} onChange={event=>{setReport(null);setError('');setYear(event.target.value);}}>{years.map(value=><option key={value}>{value}</option>)}</select></label>}
   <p>India time · Weeks start on Monday.</p>
+  <button disabled={creating} onClick={createExamples}>{creating?'Saving…':'Add sample bills'}</button>
+  {notice&&<p role="status">{notice}</p>}
   {error&&<p role="alert" className="error-box">{error}</p>}
   {report&&<><div className="metric-row">{[['Bills',report.sales.length],['Customers',report.customers],['Gross sales',cash(report.gross)],['Mock refunds',cash(report.refunded)],['Net sales',cash(report.net)]].map(([label,value])=><div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div><PosSaleList sales={report.sales} onReceipt={onReceipt}/></>}
  </section>;
