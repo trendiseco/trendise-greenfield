@@ -75,3 +75,30 @@ test('production opt-in authenticates and performs only a courier GET',async()=>
  assert.equal((await lookup({deliveryPin:'110001',weightKg:0.5,cod:true})).environment,'production');
  assert.deepEqual(paths,[['POST','/v1/external/auth/login'],['GET','/v1/external/courier/serviceability']]);
 });
+
+test('COD export calls order creation without requesting an AWB or pickup',async()=>{
+ const paths=[];
+ const lookup=createShiprocketLookup({
+  SHIPROCKET_RATE_LOOKUP:'true',SHIPROCKET_RATE_ENV:'production',
+  SHIPROCKET_API_EMAIL:'test@example.invalid',SHIPROCKET_API_PASSWORD:'fixture'
+ },async(url,options)=>{
+  const path=new URL(url).pathname;
+  paths.push(path);
+  if(path.endsWith('/auth/login'))return Response.json({token:'fixture'});
+  const body=JSON.parse(options.body);
+  assert.equal(body.payment_method,'COD');
+  assert.equal(body.pickup_location,'warehouse');
+  assert.equal(body.sub_total,1499);
+  assert.equal(body.weight,0.85);
+  return Response.json({order_id:12,shipment_id:34,awb_code:''});
+ });
+ const result=await lookup.createCodOrder({
+  id:'TRD-10002',placedAt:'2026-11-13T12:00:00.000Z',status:'confirmed',payment:{method:'cod'},
+  quote:{subtotal:1499},items:[{name:'Test shirt',sku:'TEST',qty:1,unitPrice:1499}],
+  address:{name:'Test Buyer',email:'test@example.invalid',phone:'9876543210',line1:'Demo Street',city:'Hyderabad',state:'Telangana',pincode:'501505'}
+ },{pickupLocation:'warehouse',weight:0.85,length:14,breadth:10,height:2});
+ assert.deepEqual(paths,['/v1/external/auth/login','/v1/external/orders/create/adhoc']);
+ assert.equal(result.orderId,12);
+ assert.equal(result.shipmentId,34);
+ assert.equal(result.awb,null);
+});

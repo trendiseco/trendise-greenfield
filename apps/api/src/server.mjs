@@ -78,6 +78,17 @@ const handle=async (req,res)=>{
       if(core.unit)await core.unit(authorize,{readOnly:true});else authorize();
       return respond(res,200,await lookupRates(await bodyOf(req)));
     }
+    const codExport=path.match(/^\/api\/admin\/shipping\/orders\/(TRD-\d+)$/);
+    if(req.method==='POST'&&codExport){
+      const staff=core.session(tokenFrom(req),['admin','superadmin']);
+      const order=core.orders.get(codExport[1]);
+      if(!order)throw new DomainError(404,'Order not found');
+      if(order.shiprocketOrder)return respond(res,200,order.shiprocketOrder);
+      const parcel=await bodyOf(req);
+      order.shiprocketOrder=await lookupRates.createCodOrder(order,parcel);
+      core.event(staff,'SHIPROCKET_ORDER_CREATED',order.id);
+      return respond(res,201,order.shiprocketOrder);
+    }
     if(path.startsWith('/api/admin/')){
       const staff=core.session(tokenFrom(req));
       if(is('GET','/api/admin/orders'))return respond(res,200,core.adminOrderList(staff,url.searchParams));
