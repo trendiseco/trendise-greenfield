@@ -98,6 +98,5 @@ Set `SHIPROCKET_RATE_LOOKUP=true`, `SHIPROCKET_API_EMAIL`,
 `SHIPROCKET_API_PASSWORD`, and your confirmed `SHIPROCKET_PICKUP_PIN` in the
 local ignored `.env` or the API process environment. Restart the API, then
 open Admin → Shipping and enter a sample destination PIN, parcel weight, and
-payment type. Authentication and courier serviceability both use the Shiprocket sandbox
-host. The lookup never falls back to the live Shiprocket API. Checkout charges, order booking, AWBs, pickup, returns, and Razorpay
+payment type. Sandbox is the default. To opt into production authentication and read-only rates, set `SHIPROCKET_RATE_ENV=production` or start with `zsh scripts/start-shiprocket-uat.zsh production`. Each mode uses its own host with no fallback. Checkout charges, order booking, AWBs, pickup, returns, and Razorpay
 remain mocked. API credentials belong on the server only.

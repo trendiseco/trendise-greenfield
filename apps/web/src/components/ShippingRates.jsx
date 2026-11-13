@@ -16,7 +16,7 @@ export default function ShippingRates({token}){
   finally{setBusy(false);}
  }
  return <section className="staff-panel" id="admin-shipping">
-  <h2>Shiprocket sandbox courier lookup</h2>
+  <h2>Shiprocket courier lookup</h2>
   <p>Check courier availability and estimated rates for a sample parcel. Shipment booking and checkout charges stay mocked.</p>
   <form className="m02-grid" onSubmit={check}>
    <label>Delivery PIN<input name="deliveryPin" inputMode="numeric" pattern="[1-9][0-9]{5}" maxLength={6} required/></label>
@@ -26,6 +26,7 @@ export default function ShippingRates({token}){
   </form>
   {error&&<p role="alert" className="error-box">{error}</p>}
   {result&&<div aria-live="polite">
+   <p>{result.environment==='production'?'Production rate lookup':'Sandbox rate lookup'}</p>
    <p>Pickup {result.pickupPin} → Delivery {result.deliveryPin} · {result.weightKg} kg</p>
    {result.couriers.length?<ul>{result.couriers.map((courier,index)=><li key={index}>
     {courier.name} · {courier.rate===null?'Rate unavailable':cash(courier.rate)}{courier.estimatedDays&&' · Estimated days: '+courier.estimatedDays}

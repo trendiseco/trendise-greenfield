@@ -60,3 +60,18 @@ test('plain-text sandbox denial is reported without exposing the provider body',
  });
  assert.deepEqual(calls,['https://api-sandbox.shiprocket.in/v1/external/auth/login']);
 });
+
+test('production opt-in authenticates and performs only a courier GET',async()=>{
+ const paths=[];
+ const lookup=createShiprocketLookup({
+  SHIPROCKET_RATE_LOOKUP:'true',SHIPROCKET_RATE_ENV:'production',
+  SHIPROCKET_API_EMAIL:'test@example.invalid',SHIPROCKET_API_PASSWORD:'fixture'
+ },async(url,options)=>{
+  const parsed=new URL(url);
+  assert.equal(parsed.origin,'https://apiv2.shiprocket.in');
+  paths.push([options.method||'GET',parsed.pathname]);
+  return Response.json(options.method==='POST'?{token:'fixture'}:{data:{available_courier_companies:[]}});
+ });
+ assert.equal((await lookup({deliveryPin:'110001',weightKg:0.5,cod:true})).environment,'production');
+ assert.deepEqual(paths,[['POST','/v1/external/auth/login'],['GET','/v1/external/courier/serviceability']]);
+});

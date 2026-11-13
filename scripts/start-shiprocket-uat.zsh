@@ -2,10 +2,16 @@
 set -e
 cd "${0:A:h:h}"
 
+export SHIPROCKET_RATE_ENV=${1:-sandbox}
+if [[ "$SHIPROCKET_RATE_ENV" != sandbox && "$SHIPROCKET_RATE_ENV" != production ]]; then
+  printf '%s\n' 'Use sandbox or production as the lookup environment.' >&2
+  exit 1
+fi
+
 IFS= read -rs 'db_password?Mumbai Supabase database password: '
 printf '\n'
-IFS= read -r 'SHIPROCKET_API_EMAIL?Shiprocket sandbox API user email: '
-IFS= read -rs 'SHIPROCKET_API_PASSWORD?Shiprocket sandbox API user password: '
+IFS= read -r 'SHIPROCKET_API_EMAIL?Shiprocket API user email: '
+IFS= read -rs 'SHIPROCKET_API_PASSWORD?Shiprocket API user password: '
 printf '\n'
 if [[ -z "$db_password" || -z "$SHIPROCKET_API_EMAIL" || -z "$SHIPROCKET_API_PASSWORD" ]]; then
   printf '%s\n' 'All three entries are required.' >&2
