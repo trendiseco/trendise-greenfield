@@ -55,3 +55,15 @@ test('Super Admin creates categories for product drafts and legacy products rema
  restore(restored,structuredClone(snapshot(core)));
  assert.ok(restored.catalogCategories().includes('Jackets'));
 });
+
+test('product drafts generate unique slugs and preserve the assigned URL when renamed',async()=>{
+ const core=new Commerce(),admin={role:'admin',userId:'admin'};
+ const {slug:ignored,...input}=product();
+ const first=await core.saveDraft(admin,{...input,name:'Café Linen Shirt'});
+ const second=await core.saveDraft(admin,{...input,name:'Café Linen Shirt',variants:[{...input.variants[0],sku:'OTHER-M',barcode:'OTHER-M'}]});
+ assert.equal(first.product.slug,'cafe-linen-shirt');
+ assert.equal(second.product.slug,'cafe-linen-shirt-2');
+ assert.equal(first.product.swatch,'#acc3d0');
+ const renamed=await core.saveDraft(admin,{...first.product,name:'Renamed Shirt',revision:first.revision});
+ assert.equal(renamed.product.slug,first.product.slug);
+});

@@ -309,7 +309,20 @@ export class Commerce {
     if(!/^[a-zA-Z0-9-]{1,100}$/.test(id)||['constructor','prototype','__proto__'].includes(id))throw new DomainError(400,'Invalid product ID');
     const previous=this.drafts[id];
     if(previous&&input.revision!==previous.revision)throw new DomainError(409,'Draft changed; reload before saving');
-    const product=this.validateProduct(input,id);
+    const published=this.products.find(product=>product.id===id);
+    let slug=published?.slug||previous?.product.slug||input.slug;
+    if(!slug){
+      const base=(typeof input.name==='string'?input.name:'').normalize('NFKD')
+        .replace(/\p{M}/gu,'').toLowerCase().replace(/[^a-z0-9]+/g,'-')
+        .slice(0,90).replace(/^-+|-+$/g,'')||'product';
+      const used=new Set([
+        ...this.products.map(product=>product.slug),
+        ...Object.values(this.drafts).map(draft=>draft.product.slug)
+      ]);
+      slug=base;
+      for(let suffix=2;used.has(slug);suffix++)slug=base+'-'+suffix;
+    }
+    const product=this.validateProduct({...input,slug},id);
     const draft={product,revision:(previous?.revision||0)+1,status:'draft',author:session.userId||session.role};
     this.drafts[id]=draft;this.event(session,'DRAFT_SAVED',id);return clone(draft);
   });}
