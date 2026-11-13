@@ -99,7 +99,7 @@ export default function Warehouse(){
       <h3>Inspect received return</h3>
       <ul>{returnConditions.map(condition=><li key={condition}>{condition}</li>)}</ul>
       <label>Inspection result<select name="decision" required defaultValue=""><option value="" disabled>Choose a result</option><option value="pass">Pass · restock and record eligible mock refund</option><option value="fail">Fail · quarantine outside sellable stock</option></select></label>
-      <label>Reason shown to customer<textarea name="reason" required minLength={5} maxLength={500}/></label>
+      <label>Reason shown to customer<textarea name="reason" placeholder="e.g. Tags intact and no visible wear." required minLength={5} maxLength={500}/></label>
       <button className="button button-dark" disabled={busy}>Record final inspection</button>
      </form>}
      {kind==='return'&&request.status==='approved'&&!request.receivedAt&&<form className="stack" onSubmit={e=>{
@@ -107,8 +107,8 @@ export default function Warehouse(){
       const form=new FormData(e.currentTarget);
       run(async()=>{D(await action('return-receipt',{sku:request.sku,barcode:form.get('returnBarcode'),quantity:form.get('returnQuantity')}));M('Mock return received for inspection.');});
      }}>
-      <label>Returned garment barcode<input name="returnBarcode" required autoComplete="off"/></label>
-      <label>Units received (expected {order.items.find(item=>item.sku===request.sku)?.qty})<input name="returnQuantity" type="number" min="1" required/></label>
+      <label>Returned garment barcode<input name="returnBarcode" placeholder="Scan the barcode printed on the returned tag" required autoComplete="off"/></label>
+      <label>Units received (expected {order.items.find(item=>item.sku===request.sku)?.qty})<input name="returnQuantity" placeholder="e.g. 1" type="number" min="1" required/></label>
       <button className="button button-dark" disabled={busy}>Record mock return receipt</button>
      </form>}
     </div>)}

@@ -44,7 +44,7 @@ export default function AdminOrders({token,filter,onFilter,onReviewed}){
   </nav>
   <div className="admin-orders-grid"><div>
    <form className="admin-order-filters" onSubmit={e=>{e.preventDefault();Q(search.trim());P(1);}}>
-    <label>Search orders<input type="search" value={search} maxLength={100} onChange={e=>S(e.target.value)} placeholder="Order number, customer or mobile"/></label>
+    <label>Search orders<input type="search" value={search} maxLength={100} onChange={e=>S(e.target.value)} placeholder="e.g. TRD-10002 or Asha Sharma"/></label>
     <button className="button button-dark" type="submit">Search</button>
     <label>Order list<select value={filter} disabled={busy} onChange={e=>onFilter(e.target.value)}>{Object.entries(orderListLabels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
    </form>
@@ -78,7 +78,7 @@ export default function AdminOrders({token,filter,onFilter,onReviewed}){
      {request.status==='requested'&&review?.caseKey!==key&&<button className="small-outline" disabled={busy} onClick={()=>{V({caseKey:key,decision:'approved',note:''});DE('');N('');}}>Review request</button>}
      {review?.caseKey===key&&<form className="admin-order-review" onSubmit={submit}>
       <label>Decision<select value={review.decision} onChange={e=>V({...review,decision:e.target.value})}><option value="approved">Approve for follow-up</option><option value="rejected">Decline</option></select></label>
-      <label>Reason shown to customer<textarea required minLength={5} maxLength={500} value={review.note} onChange={e=>V({...review,note:e.target.value})}/></label>
+      <label>Reason shown to customer<textarea required minLength={5} placeholder="e.g. Approved for inspection because the item arrived damaged." maxLength={500} value={review.note} onChange={e=>V({...review,note:e.target.value})}/></label>
       <p className="hint">A decision does not book a pickup, issue a refund, or restore stock.</p>
       <div className="button-row"><button className="button button-dark" disabled={busy||review.note.trim().length<5}>{busy?'Saving…':'Save decision'}</button><button className="small-outline" type="button" disabled={busy} onClick={()=>V(null)}>Back</button></div>
      </form>}

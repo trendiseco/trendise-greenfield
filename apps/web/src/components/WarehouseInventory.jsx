@@ -17,7 +17,7 @@ export default function WarehouseInventory({token,onSessionExpired}){
   <div className="panel-heading"><div><h2 id="warehouse-inventory-title">Products &amp; inventory</h2><p className="hint">Shared stock across all locations. View only; stock adjustments are managed in Admin.</p></div><button className="small-outline" disabled={loading} onClick={()=>F(n=>n+1)}>Refresh inventory</button></div>
   <div className="warehouse-inventory-content">
    <form className="warehouse-inventory-search" onSubmit={e=>{e.preventDefault();change(S,input.trim());}}>
-    <label>Find products or scan a barcode<input type="search" value={input} onChange={e=>I(e.target.value)} maxLength={100} placeholder="Product, SKU, barcode, colour or size" autoComplete="off"/></label>
+    <label>Find products or scan a barcode<input type="search" value={input} onChange={e=>I(e.target.value)} maxLength={100} placeholder="e.g. Oxford or SH-OXF-SKY-M" autoComplete="off"/></label>
     <button className="button button-dark" type="submit">Search</button>
     <button className="small-outline" type="button" onClick={()=>{I('');S('');C('all');L('all');K('all');P(1);}}>Clear filters</button>
    </form>

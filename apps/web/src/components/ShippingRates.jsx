@@ -19,8 +19,8 @@ export default function ShippingRates({token}){
   <h2>Shiprocket courier lookup</h2>
   <p>Check courier availability and estimated rates for a sample parcel. Shipment booking and checkout charges stay mocked.</p>
   <form className="m02-grid" onSubmit={check}>
-   <label>Delivery PIN<input name="deliveryPin" inputMode="numeric" pattern="[1-9][0-9]{5}" maxLength={6} required/></label>
-   <label>Package weight (kg)<input name="weightKg" type="number" min="0.01" max="30" step="0.01" defaultValue="0.5" required/></label>
+   <label>Delivery PIN<input name="deliveryPin" placeholder="e.g. 110001" inputMode="numeric" pattern="[1-9][0-9]{5}" maxLength={6} required/></label>
+   <label>Package weight (kg) <small>Example: 0.85 kg for a packed parcel</small><input name="weightKg" type="number" min="0.01" max="30" step="0.01" defaultValue="0.5" required/></label>
    <label>Payment type<select name="payment"><option value="cod">Cash on delivery</option><option value="prepaid">Prepaid</option></select></label>
    <button className="button button-dark" disabled={busy}>{busy?'Checking…':'Check courier rates'}</button>
   </form>
