@@ -69,23 +69,30 @@ export function PosSaleList({sales,token,onReceipt,onReturned}) {
 export default function PosHistory({token,onReceipt,onInventoryChanged,allowExport=false}) {
  const [phone,setPhone]=useState(''),[result,setResult]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
  const [from,setFrom]=useState(''),[to,setTo]=useState(''),[exporting,setExporting]=useState(false);
+ const [channel,setChannel]=useState('sales');
  const invalidRange=Boolean(from&&to&&from>to);
  const filtered=result?filterCustomerHistory(result,from,to):null;
+ const channelLabel=channel==='sales'?'Store POS':'Customer website';
+ const count=filtered?.[channel].length??0;
  async function download() {
   setExporting(true);setError('');
   try {
    const {default:Excel}=await import('exceljs/dist/exceljs.min.js');
-   const file=await customerHistoryWorkbook(Excel,filtered).xlsx.writeBuffer();
+   const file=await customerHistoryWorkbook(Excel,{...filtered,[channel==='sales'?'orders':'sales']:[]}).xlsx.writeBuffer();
    const url=URL.createObjectURL(new Blob([file],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
    const link=document.createElement('a');
-   link.href=url;link.download='trendise-customer-purchases.xlsx';link.click();
+   link.href=url;link.download=channel==='sales'?'trendise-store-pos-purchases.xlsx':'trendise-website-orders.xlsx';link.click();
    setTimeout(()=>URL.revokeObjectURL(url),1000);
   }catch(error){setError(error.message);}
   finally{setExporting(false);}
  }
  async function search(event) {
-  event.preventDefault();setError('');setResult(null);setBusy(true);
-  try {setResult(await api('/api/pos/customers/search',{token,method:'POST',body:JSON.stringify({phone})}));}
+  event.preventDefault();
+  await loadHistory(phone);
+ }
+ async function loadHistory(mobile) {
+  setError('');setResult(null);setBusy(true);
+  try {setResult(await api('/api/pos/customers/search',{token,method:'POST',body:JSON.stringify({phone:mobile})}));}
   catch(error) {setError(error.message);}
   finally {setBusy(false);}
  }
@@ -94,22 +101,36 @@ export default function PosHistory({token,onReceipt,onInventoryChanged,allowExpo
   onInventoryChanged();
  }
  return <section className="staff-panel pos-history"><h2>Customer search</h2>
-  <form className="scanner-row" onSubmit={search}><label>Mobile number<input required type="tel" value={phone} onChange={event=>setPhone(event.target.value)} placeholder="e.g. 9876543210"/></label><button disabled={busy}>{busy?'Searching…':'Search history'}</button></form>
+  {allowExport&&<nav aria-label="Purchase channel" className="cms-tabs">
+   <button type="button" aria-pressed={channel==='sales'} onClick={()=>setChannel('sales')}>Store POS</button>
+   <button type="button" aria-pressed={channel==='orders'} onClick={()=>setChannel('orders')}>Customer website</button>
+  </nav>}
+  <form className={allowExport?'m02-grid':'scanner-row'} onSubmit={search}>
+   <label>Mobile number<input required type="tel" value={phone} onChange={event=>{setPhone(event.target.value);setResult(null);}} disabled={busy} placeholder="e.g. 9999900001"/></label>
+   {allowExport&&<>
+    <label>Purchase date from<input type="date" value={from} max={to||undefined} onChange={event=>setFrom(event.target.value)}/></label>
+    <label>Purchase date to<input type="date" value={to} min={from||undefined} onChange={event=>setTo(event.target.value)}/></label>
+   </>}
+   <div className="button-row"><button type="submit" className="button button-dark" disabled={busy||invalidRange}>{busy?'Searching…':'Search'}</button>
+    {allowExport&&<button type="button" disabled={busy} onClick={()=>{setPhone('9999900001');setFrom('');setTo('');loadHistory('9999900001');}}>Search sample customer</button>}
+   </div>
+  </form>
   {error&&<p role="alert" className="error-box">{error}</p>}
-  {allowExport&&<div className="m02-grid">
-   <label>Purchase date from<input type="date" value={from} max={to||undefined} onChange={event=>setFrom(event.target.value)}/></label>
-   <label>Purchase date to<input type="date" value={to} min={from||undefined} onChange={event=>setTo(event.target.value)}/></label>
-   <button type="button" disabled={!from&&!to} onClick={()=>{setFrom('');setTo('');}}>Clear dates</button>
-   <button type="button" disabled={exporting||invalidRange||!filtered||(filtered.sales.length+filtered.orders.length===0)} onClick={download}>{exporting?'Preparing Excel…':'Download Excel'}</button>
-  </div>}
-  {allowExport&&<p className="hint">Dates use India time and include both selected days.</p>}
+  {allowExport&&<p className="hint">Dates are inclusive in India time. Leave them blank for all purchases.</p>}
   {invalidRange&&<p role="alert">Choose an end date on or after the start date.</p>}
-  {filtered&&!invalidRange&&<><h3>{result.name||'Customer'} · {result.phone}</h3><h4>Store purchases</h4>
-   <PosSaleList sales={filtered.sales} token={token} onReceipt={onReceipt} onReturned={onInventoryChanged?returned:undefined}/>
-   <h4>Website orders</h4>
-   {filtered.orders.length ? filtered.orders.map(order=><details className="pos-history-bill" key={order.id}>
-    <summary>{order.id} · {saleDate(order.at)} · {order.status} · {cash(order.total)}</summary><p>{order.name} · {order.payment}</p><BillItems items={order.items}/>
-   </details>) : <p>No website orders found.</p>}
+  {filtered&&!invalidRange&&<>
+   <h3>{result.name||'Customer'} · {result.phone}</h3>
+   {allowExport&&<div className="button-row">
+    {count>0?<button type="button" className="button button-dark" disabled={exporting} onClick={download}>{exporting?'Preparing Excel…':'Download Excel · '+channelLabel}</button>:<p>No {channelLabel} purchases match this search.</p>}
+   </div>}
+   {(!allowExport||channel==='sales')&&<><h4>Store purchases</h4>
+    <PosSaleList sales={filtered.sales} token={token} onReceipt={onReceipt} onReturned={onInventoryChanged?returned:undefined}/>
+   </>}
+   {(!allowExport||channel==='orders')&&<><h4>Website orders</h4>
+    {filtered.orders.length ? filtered.orders.map(order=><details className="pos-history-bill" key={order.id}>
+     <summary>{order.id} · {saleDate(order.at)} · {order.status} · {cash(order.total)}</summary><p>{order.name} · {order.payment}</p><BillItems items={order.items}/>
+    </details>) : <p>No website orders found.</p>}
+   </>}
   </>}
  </section>;
 }
