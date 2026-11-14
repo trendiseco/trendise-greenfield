@@ -130,3 +130,21 @@ mobile number. Request the code, enter the received SMS code, and open My Orders
 Checkout uses the same authentication backend. The previous mock customer sessions
 are rejected in SMS mode. Payments and fulfilment keep their existing configuration.
 The default `CUSTOMER_OTP_MODE=mock` supports isolated tests without SMS.
+
+### MSG91 OTP widget
+
+To use the MSG91 widget with TRENDISE's Account and Checkout forms, set these
+in the backend environment or local ignored `.env` and restart:
+
+```dotenv
+CUSTOMER_OTP_MODE=msg91-uat
+MSG91_AUTH_KEY=<server-side MSG91 AuthKey>
+MSG91_WIDGET_ID=<OTP widget ID>
+CUSTOMER_OTP_TEST_NUMBERS=<comma-separated Indian mobile numbers you control>
+```
+
+Use a mobile SMS widget with a six-digit code. Remove any fixed demo number/code
+for the test recipient, and keep the AuthKey's IP allowlist pointed at the
+backend's outbound IP. The AuthKey stays on the server. After MSG91 verifies the
+code, TRENDISE checks that the verified number matches the requested number
+before creating a customer session. The database continues to hold order history.

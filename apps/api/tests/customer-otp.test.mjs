@@ -44,3 +44,24 @@ test('private UAT requests real-mode SMS and only grants customer access after p
   assert.equal((await call('/api/orders',null,user.token)).status,200);
  }finally{await new Promise(resolve=>server.close(resolve));}
 });
+
+test('MSG91 binds OTP verification to the requested number and consumes the challenge',async()=>{
+ const phone='9999900001',calls=[];
+ let verifiedPhone='919999900002';
+ const otp=createCustomerOtp({CUSTOMER_OTP_MODE:'msg91-uat',MSG91_AUTH_KEY:'test-key',
+  MSG91_WIDGET_ID:'testWidget',CUSTOMER_OTP_TEST_NUMBERS:phone},async(url,options)=>{
+  const action=url.split('/').at(-1),body=JSON.parse(options.body);
+  calls.push({action,body});
+  if(action==='verifyOtp'&&body.otp==='123456')return Response.json({type:'error',message:'OTP not match'});
+  return Response.json({type:'success',message:{sendOtp:'request-id',verifyOtp:'access-token',verifyAccessToken:verifiedPhone}[action]});
+ });
+ await assert.rejects(otp.send('9999900002'),{status:403});
+ await otp.send(phone);
+ assert.deepEqual(calls[0],{action:'sendOtp',body:{authkey:'test-key',widgetId:'testWidget',identifier:'91'+phone}});
+ await assert.rejects(otp.send(phone),{status:429});
+ await assert.rejects(otp.verify(phone,'123456'),{status:401});
+ await assert.rejects(otp.verify(phone,'654321'),{status:401});
+ verifiedPhone='91'+phone;
+ assert.equal(await otp.verify(phone,'654321'),phone);
+ await assert.rejects(otp.verify(phone,'654321'),{status:401});
+});
