@@ -21,6 +21,18 @@ export function periodStart(period, now) {
   return date.getTime() - 19800000;
 }
 
+function purchaseOrder(order) {
+  return {id:order.id,at:order.placedAt,name:order.address?.name,phone:order.phone,status:order.status,
+    items:order.items.map(({name,sku,color,size,qty,unitPrice})=>({name,sku,color,size,qty,unitPrice})),
+    total:order.quote.total,payment:order.payment?.method};
+}
+
+function indiaMidnight(date) {
+  if(typeof date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(date))return NaN;
+  const utc=Date.parse(date+'T00:00:00Z');
+  return Number.isFinite(utc)&&new Date(utc).toISOString().slice(0,10)===date?utc-19800000:NaN;
+}
+
 export const posMethods = {
   posLocation(session) {
     this.permit(session, 'pos.sell');
@@ -188,12 +200,19 @@ export const posMethods = {
     const manager = ['admin', 'superadmin'].includes(session.role);
     const location = manager ? null : this.posLocation(session);
     const sales = [...this.sales.values()].filter(sale => sale.customer?.phone === phone && (!location || sale.locationId === location.id)).reverse();
-    const orders = [...this.orders.values()].filter(order => order.phone === phone).reverse().map(order => ({
-      id: order.id, at: order.placedAt, name: order.address?.name, status: order.status,
-      items: order.items.map(({name, sku, color, size, qty, unitPrice}) => ({name, sku, color, size, qty, unitPrice})),
-      total: order.quote.total, payment: order.payment?.method
-    }));
+    const orders = [...this.orders.values()].filter(order => order.phone === phone).reverse().map(purchaseOrder);
     return {phone, sales, orders, name: sales[0]?.customer?.name || this.website.customers[phone]?.name || orders[0]?.name};
+  },
+
+  purchaseExtract(session, {channel,from,to}) {
+    if(!['admin','superadmin'].includes(session.role))throw new DomainError(403,'Admin access required');
+    if(!['sales','orders'].includes(channel))throw new DomainError(400,'Choose Store POS or Website');
+    const start=indiaMidnight(from),last=indiaMidnight(to);
+    if(!Number.isFinite(start)||!Number.isFinite(last)||start>last)throw new DomainError(400,'Enter a valid From and To date');
+    const within=at=>Date.parse(at)>=start&&Date.parse(at)<last+86400000;
+    const sales=channel==='sales'?[...this.sales.values()].filter(sale=>within(sale.at)).sort((a,b)=>b.at.localeCompare(a.at)):[];
+    const orders=channel==='orders'?[...this.orders.values()].filter(order=>within(order.placedAt)).reverse().map(purchaseOrder):[];
+    return {sales,orders};
   },
 
   async returnPosItem(session, id, body, key) {

@@ -6,6 +6,7 @@ import SizeChartEditor from '../../components/SizeChartEditor';
 import SizeChart from '../../components/SizeChart';
 import AdminDashboard from '../../components/AdminDashboard';
 import ShippingRates from '../../components/ShippingRates';
+import CustomerExtract from '../../components/CustomerExtract';
 import PosHistory from '../../components/PosHistory';
 import PosTerms from '../../components/PosTerms';
 import PosPromotions from '../../components/PosPromotions';
@@ -19,7 +20,7 @@ const variantExamples={sku:'SH-OXF-SKY-M',barcode:'0012345678905',color:'Sky Blu
 const fresh=()=>({name:'',category:'',description:'',fabric:'',fit:'',images:[],variants:[{sku:'',barcode:'',color:'',size:'',price:1499}]});
 const managementTabs=[
  ['admin-dashboard','Dashboard'],['admin-orders','Orders & returns'],
- ['admin-customers','Customer search'],['admin-products','Products'],['admin-shipping','Shipping'],['website-controls','Website & offers'],['admin-inventory','Inventory']
+ ['admin-customers','Customer search'],['admin-customer-extract','Data extract'],['admin-products','Products'],['admin-shipping','Shipping'],['website-controls','Website & offers'],['admin-inventory','Inventory']
 ];
 const governanceTabs=[['admin-pos-promotions','Store POS promotions'],['admin-pos-terms','Store POS Terms & Conditions'],['admin-categories','Categories'],['admin-approvals','Approvals'],['admin-staff','Staff & roles']];
 
@@ -71,7 +72,8 @@ export default function Admin(){
  <div className="operations-pane" hidden={section!=='admin-dashboard'}><label>Dashboard period<select value={period} onChange={event=>setPeriod(event.target.value)}>
    {Object.entries({today:'Today',week:'This week',month:'This month',year:'This year',fiveYears:'Past 5 years'}).map(([value,label])=><option key={value} value={value}>{label}</option>)}
   </select></label>{filteredSummary?.period===period?<AdminDashboard data={filteredSummary.data} onOpenOrders={openOrders}/>:<p role="status">Loading dashboard…</p>}</div>
- {section==='admin-customers'&&<PosHistory key={token} token={token} allowExport/>}
+ {section==='admin-customer-extract'&&<CustomerExtract key={token} token={token}/>}
+ {section==='admin-customers'&&<PosHistory key={token} token={token} showChannels/>}
  {access&&section==='admin-pos-terms'&&<PosTerms key={token} token={token}/>}
  {access&&section==='admin-pos-promotions'&&<PosPromotions token={token}/>}
  <div className="operations-pane" hidden={section!=='admin-orders'}><AdminOrders key={token+orderFilter} token={token} filter={isOrderList?orderFilter:'all'} onFilter={openOrders} onReviewed={()=>api('/api/admin/summary',{token}).then(S).catch(()=>{})}/></div>

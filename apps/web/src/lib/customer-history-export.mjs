@@ -1,14 +1,6 @@
 const indiaDate = new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'});
 const indiaTime = new Intl.DateTimeFormat('en-GB', {timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',second:'2-digit'});
 
-export function filterCustomerHistory(history, from, to) {
- const withinRange = ({at}) => {
-  const date = indiaDate.format(new Date(at));
-  return (!from||date>=from)&&(!to||date<=to);
- };
- return {...history,sales:history.sales.filter(withinRange),orders:history.orders.filter(withinRange)};
-}
-
 export function customerHistoryWorkbook(Excel, history) {
  const book = new Excel.Workbook();
  const purchases = book.addWorksheet('Purchases');
@@ -30,7 +22,7 @@ export function customerHistoryWorkbook(Excel, history) {
   for (const record of records) {
    const at=new Date(record.at);
    purchases.addRow([channel,record.id,indiaDate.format(at),indiaTime.format(at),
-    record.customer?.name||record.name||history.name||'',history.phone,
+    record.customer?.name||record.name||history.name||'',record.customer?.phone||record.phone||history.phone||'',
     record.payment?.method||record.payment,record.status||record.payment?.status,
     record.quote?.total??record.total,record.example?'Yes':'']);
    for (const line of record.items) {

@@ -110,6 +110,7 @@ const handle=async (req,res)=>{
       if(is('GET','/api/admin/pos-promotions'))return respond(res,200,core.posPromotionList(staff));
       if(is('POST','/api/admin/pos-price-import'))return respond(res,200,core.importPosPrices(staff,(await bodyOf(req))?.rows));
       if(is('POST','/api/admin/pos-promotions'))return respond(res,200,core.savePosPromotion(staff,await bodyOf(req)));
+      if(is('GET','/api/admin/customer-extract'))return respond(res,200,core.purchaseExtract(staff,Object.fromEntries(url.searchParams)));
       if(is('GET','/api/admin/orders'))return respond(res,200,core.adminOrderList(staff,url.searchParams));
       const adminOrder=path.match(/^\/api\/admin\/orders\/(TRD-\d+)$/);
       if(req.method==='GET'&&adminOrder)return respond(res,200,core.adminOrderDetail(staff,adminOrder[1]));

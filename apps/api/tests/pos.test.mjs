@@ -111,3 +111,21 @@ test('category visibility, scoped promotions and Excel prices control new sales'
  assert.equal((await app.completePosSale(cashier,body)).sale.quote.total,999);
  assert.equal(app.posDashboard(admin,'fiveYears',null,true).gross,999);
 });
+
+test('admin purchase extract filters all customers by channel and inclusive India dates',async()=>{
+ const app=new Commerce();
+ const admin={role:'admin'},superadmin={role:'superadmin'};
+ app.sales.set('POS-1',{at:'2026-11-13T18:30:00Z',customer:{phone:'9999900001'}});
+ app.sales.set('POS-2',{at:'2026-11-14T18:29:59Z',customer:{phone:'9999900002'}});
+ app.sales.set('POS-3',{at:'2026-11-14T18:30:00Z'});
+ app.orders.set('TRD-1',{id:'TRD-1',placedAt:'2026-11-14T10:00:00Z',phone:'9999900003',items:[],quote:{total:100}});
+ const dates={from:'2026-11-14',to:'2026-11-14'};
+ const sales=app.purchaseExtract(admin,{...dates,channel:'sales'});
+ assert.deepEqual(sales.sales.map(sale=>sale.customer.phone),['9999900002','9999900001']);
+ assert.equal(sales.orders.length,0);
+ const orders=app.purchaseExtract(superadmin,{...dates,channel:'orders'});
+ assert.equal(orders.sales.length,0);
+ assert.equal(orders.orders[0].phone,'9999900003');
+ assert.throws(()=>app.purchaseExtract({role:'pos'},{...dates,channel:'sales'}),{status:403});
+ assert.throws(()=>app.purchaseExtract(admin,{...dates,to:'2026-11-31',channel:'sales'}),{status:400});
+});
