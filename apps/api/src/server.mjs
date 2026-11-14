@@ -1,3 +1,4 @@
+import {createCustomerOtp} from './customer-otp.mjs';
 import {authorizeShipmentEvent,applyShipmentEvent} from './shipment-events.mjs';
 import {createShiprocketLookup} from './shiprocket.mjs';
 import {adminDashboard} from './admin-dashboard.mjs';
@@ -25,7 +26,8 @@ async function bodyOf(req){
 function tokenFrom(req){const h=req.headers.authorization||'';return h.startsWith('Bearer ')?h.slice(7):'';}
 
 const ratePath='/api/admin/shipping/rates';
-export function createServer(core=commerce,lookupRates=createShiprocketLookup()){
+export function createServer(core=commerce,lookupRates=createShiprocketLookup(),customerOtp=createCustomerOtp()){
+ if(customerOtp)core.requireVerifiedSms=true;
 const handle=async (req,res)=>{
   const origin=req.headers.origin||'';
   if(allowedOrigins.has(origin)){
@@ -52,8 +54,8 @@ const handle=async (req,res)=>{
     if(is('POST','/api/checkout/quote'))return respond(res,200,core.onlineQuote(core.session(tokenFrom(req),['customer']),await bodyOf(req)));
     if(is('GET','/api/locations'))return respond(res,200,{locations:core.locations});
     if(is('GET','/api/policy'))return respond(res,200,policyDocument(core.policy));
-    if(is('POST','/api/auth/request-otp')){const b=await bodyOf(req);return respond(res,200,core.requestOtp(String(b.phone||'')));}
-    if(is('POST','/api/auth/verify-otp')){const b=await bodyOf(req);return respond(res,200,core.verifyOtp(String(b.phone||''),String(b.otp||'')));}
+    if(is('POST','/api/auth/request-otp')){const b=await bodyOf(req);return respond(res,200,customerOtp?await customerOtp.send(b.phone):core.requestOtp(String(b.phone||'')));}
+    if(is('POST','/api/auth/verify-otp')){const b=await bodyOf(req);return respond(res,200,customerOtp?core.issueCustomerSession(await customerOtp.verify(b.phone,String(b.otp||'')),{smsVerified:true}):core.verifyOtp(String(b.phone||''),String(b.otp||'')));}
     if(is('POST','/api/auth/staff')){const b=await bodyOf(req);return respond(res,200,core.staffLogin(String(b.role||''),String(b.pin||''),String(b.userId||b.role||'')));}
     if(is('GET','/api/me'))return respond(res,200,core.session(tokenFrom(req)));
     if(is('POST','/api/checkout/place')){const s=core.session(tokenFrom(req),['customer']);return respond(res,201,await core.placeOrder(s,await bodyOf(req),req.headers['x-idempotency-key']));}
@@ -146,7 +148,7 @@ const handle=async (req,res)=>{
     if(is('POST','/api/tryon/mock')){core.session(tokenFrom(req),['customer']);const b=await bodyOf(req);if(!b.sku)throw new DomainError(400,'Select a product');core.product(b.sku);return respond(res,200,{status:'mock_only',generatedImage:null,message:'Virtual try-on generation is intentionally disabled in Development. No photos are uploaded to AI providers.'});}
     return respond(res,404,{error:'Endpoint not found',code:'NOT_FOUND'});
   }catch(err){
-    if(core.unit&&path!==ratePath)throw err;
+    if(core.unit&&path!==ratePath&&!(customerOtp&&req.method==='POST'&&path==='/api/auth/request-otp'))throw err;
     const status=err instanceof DomainError?err.status:500;
     if(status===500)console.error(err);
     return respond(res,status,{error:status===500?'Internal server error':err.message,code:err.code||'INTERNAL_ERROR'});
@@ -154,7 +156,8 @@ const handle=async (req,res)=>{
 };
 return http.createServer(async(req,res)=>{
  const path=new URL(req.url,'http://localhost').pathname;
- if(!core.unit||req.method==='OPTIONS'||(req.method==='POST'&&path===ratePath))return handle(req,res);
+ const smsSend=customerOtp&&req.method==='POST'&&path==='/api/auth/request-otp';
+ if(!core.unit||smsSend||req.method==='OPTIONS'||(req.method==='POST'&&path===ratePath))return handle(req,res);
  let response;const buffered={setHeader:(...args)=>res.setHeader(...args),writeHead:(status,headers)=>{response={status,headers};},end:body=>{response={...response,body};}};
  // Account reads can initialize a profile. Other GET handlers only need a snapshot.
  const readOnly=req.method==='GET'&&path!=='/api/account';
@@ -162,5 +165,6 @@ return http.createServer(async(req,res)=>{
 });
 }
 if(process.argv[1]&&import.meta.url===new URL(`file://${process.argv[1]}`).href){
-  createServer().listen(port,'127.0.0.1',()=>console.log(`TRENDISE mock API at http://localhost:${port} (Development ONLY)`));
+  const customerOtp=createCustomerOtp();
+  createServer(commerce,undefined,customerOtp).listen(port,'127.0.0.1',()=>console.log(`TRENDISE mock API at http://localhost:${port} (Development ONLY)`));
 }

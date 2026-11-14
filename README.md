@@ -108,3 +108,25 @@ local ignored `.env` or the API process environment. Restart the API, then
 open Admin → Shipping and enter a sample destination PIN, parcel weight, and
 payment type. Sandbox is the default. To opt into production authentication and read-only rates, set `SHIPROCKET_RATE_ENV=production` or start with `zsh scripts/start-shiprocket-uat.zsh production`. Each mode uses its own host with no fallback. Checkout charges, order booking, AWBs, pickup, returns, and Razorpay
 remain mocked. API credentials belong on the server only.
+
+## Private customer SMS OTP test
+
+Enable **Phone** in Supabase Auth and configure an SMS provider that can deliver
+to the Indian number you control. Use the hosted project's URL and **publishable**
+key. Provider credentials belong in Supabase. Remove any Supabase fixed test OTP
+configured for the number before testing actual SMS delivery.
+
+Set these in the backend environment (or the local ignored `.env`) and restart:
+
+```dotenv
+CUSTOMER_OTP_MODE=supabase-uat
+SUPABASE_AUTH_URL=https://<project-ref>.supabase.co
+SUPABASE_AUTH_PUBLISHABLE_KEY=sb_publishable_...
+CUSTOMER_OTP_TEST_NUMBERS=<your-10-digit-Indian-mobile>
+```
+
+Sign out of the customer account, open `/account`, and enter the allowed
+mobile number. Request the code, enter the received SMS code, and open My Orders.
+Checkout uses the same authentication backend. The previous mock customer sessions
+are rejected in SMS mode. Payments and fulfilment keep their existing configuration.
+The default `CUSTOMER_OTP_MODE=mock` supports isolated tests without SMS.
