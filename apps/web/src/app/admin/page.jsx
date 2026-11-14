@@ -71,7 +71,7 @@ export default function Admin(){
  <div className="operations-pane" hidden={section!=='admin-dashboard'}><label>Dashboard period<select value={period} onChange={event=>setPeriod(event.target.value)}>
    {Object.entries({today:'Today',week:'This week',month:'This month',year:'This year',fiveYears:'Past 5 years'}).map(([value,label])=><option key={value} value={value}>{label}</option>)}
   </select></label>{filteredSummary?.period===period?<AdminDashboard data={filteredSummary.data} onOpenOrders={openOrders}/>:<p role="status">Loading dashboard…</p>}</div>
- {section==='admin-customers'&&<PosHistory token={token}/>}
+ {section==='admin-customers'&&<PosHistory key={token} token={token} allowExport/>}
  {access&&section==='admin-pos-terms'&&<PosTerms key={token} token={token}/>}
  {access&&section==='admin-pos-promotions'&&<PosPromotions token={token}/>}
  <div className="operations-pane" hidden={section!=='admin-orders'}><AdminOrders key={token+orderFilter} token={token} filter={isOrderList?orderFilter:'all'} onFilter={openOrders} onReviewed={()=>api('/api/admin/summary',{token}).then(S).catch(()=>{})}/></div>
