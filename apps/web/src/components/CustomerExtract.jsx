@@ -3,6 +3,7 @@ import {useState} from 'react';
 import {api} from '../lib/api';
 import {customerHistoryWorkbook} from '../lib/customer-history-export.mjs';
 import PurchaseChannel from './PurchaseChannel';
+import {PosSaleList,WebsiteOrderList} from './PosHistory';
 
 export default function CustomerExtract({token}) {
  const [channel,setChannel]=useState('sales'),[from,setFrom]=useState(''),[to,setTo]=useState('');
@@ -48,5 +49,8 @@ export default function CustomerExtract({token}) {
   </form>
   <p role="status">{result?`${count} ${label} purchases found.`:'Search a date range to enable the Excel download. Both dates are inclusive in India time.'}</p>
   {error&&<p role="alert" className="error-box">{error}</p>}
+  {count>0&&<section aria-label={label+' purchase results'} key={channel+from+to}>
+   {channel==='sales'?<PosSaleList sales={result.sales}/>:<WebsiteOrderList orders={result.orders}/>}
+  </section>}
  </section>;
 }

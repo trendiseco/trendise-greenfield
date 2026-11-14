@@ -66,6 +66,14 @@ export function PosSaleList({sales,token,onReceipt,onReturned}) {
  </details>) : <p>No store bills found.</p>;
 }
 
+export function WebsiteOrderList({orders}) {
+ return orders.length ? orders.map(order=><details className="pos-history-bill" key={order.id}>
+  <summary>{order.id} · {saleDate(order.at)} · {order.status} · {cash(order.total)}</summary>
+  <p>{[order.name,order.phone,order.payment].filter(Boolean).join(' · ')}</p>
+  <BillItems items={order.items}/>
+ </details>) : <p>No website orders found.</p>;
+}
+
 export default function PosHistory({token,onReceipt,onInventoryChanged,showChannels=false}) {
  const [phone,setPhone]=useState(''),[result,setResult]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
  const [channel,setChannel]=useState('sales');
@@ -98,9 +106,7 @@ export default function PosHistory({token,onReceipt,onInventoryChanged,showChann
     <PosSaleList sales={result.sales} token={token} onReceipt={onReceipt} onReturned={onInventoryChanged?returned:undefined}/>
    </>}
    {(!showChannels||channel==='orders')&&<><h4>Website orders</h4>
-    {result.orders.length ? result.orders.map(order=><details className="pos-history-bill" key={order.id}>
-     <summary>{order.id} · {saleDate(order.at)} · {order.status} · {cash(order.total)}</summary><p>{order.name} · {order.payment}</p><BillItems items={order.items}/>
-    </details>) : <p>No website orders found.</p>}
+    <WebsiteOrderList orders={result.orders}/>
    </>}
   </>}
  </section>;
