@@ -84,3 +84,14 @@ test('MSG91 browser widget checks identity server-side and rejects token replay'
   assert.equal((await verify('right')).status,409);
  }finally{await new Promise(resolve=>server.close(resolve));}
 });
+
+test('explicit MSG91 live mode accepts Indian mobile numbers without a private allowlist',async()=>{
+ const settings={MSG91_AUTH_KEY:'test-key',MSG91_WIDGET_ID:'widget',MSG91_WIDGET_TOKEN:'browser-token'};
+ assert.throws(()=>createCustomerOtp({...settings,CUSTOMER_OTP_MODE:'msg91-widget'}));
+ const otp=createCustomerOtp({...settings,CUSTOMER_OTP_MODE:'msg91-live'},async()=>
+  Response.json({type:'success',message:'918999900001'}));
+ assert.deepEqual(await otp.send('8999900001'),{widget:true});
+ assert.equal(await otp.verifyWidget('8999900001','test-token'),'8999900001');
+ await assert.rejects(otp.verifyWidget('9999900001','test-token'),{status:401});
+ await assert.rejects(otp.send('12345'),{status:400});
+});

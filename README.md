@@ -152,3 +152,13 @@ before creating a customer session. The database continues to hold order history
 Use `CUSTOMER_OTP_MODE=msg91-widget` with `MSG91_WIDGET_TOKEN` from MSG91
 Client Side Integration to use MSG91's browser CAPTCHA. The widget token is
 browser-facing. Keep the separate AuthKey in the backend environment.
+
+### MSG91 customer rollout
+
+`CUSTOMER_OTP_MODE=msg91-live` allows any valid Indian mobile number to use
+the same widget. Use production widget settings with CAPTCHA and throttling,
+remove fixed demo OTPs, and allowlist the deployed backend's outbound IPv4
+for its server-side AuthKey. Verify SMS sign-in and order ownership on the
+deployed storefront. This mode enables the login integration only. The
+current commerce server still requires development mode and local binding,
+so a production commerce deployment is a separate prerequisite.

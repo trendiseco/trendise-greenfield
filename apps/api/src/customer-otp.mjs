@@ -4,7 +4,7 @@ import {DomainError,canonicalPhone} from './core.mjs';
 export function createCustomerOtp(env=process.env,request) {
  const mode=env.CUSTOMER_OTP_MODE||'mock';
  if(mode==='mock')return null;
- if(mode==='msg91-widget')return createMsg91Widget(env,request??msg91Ipv4Request);
+ if(['msg91-widget','msg91-live'].includes(mode))return createMsg91Widget(env,request??msg91Ipv4Request);
  request??=fetch;
  if(mode==='msg91-uat')return createMsg91Otp(env,request);
  if(mode!=='supabase-uat')throw new Error('Invalid CUSTOMER_OTP_MODE');
@@ -127,12 +127,13 @@ function createMsg91Otp(env, request) {
 
 function createMsg91Widget(env,request) {
  const {MSG91_AUTH_KEY:authkey,MSG91_WIDGET_ID:widgetId,MSG91_WIDGET_TOKEN:tokenAuth}=env;
+ const live=env.CUSTOMER_OTP_MODE==='msg91-live';
  const allowed=new Set((env.CUSTOMER_OTP_TEST_NUMBERS||'').split(',').filter(value=>value.trim()).map(canonicalPhone));
- if(!authkey||!widgetId||!tokenAuth||!allowed.size)throw new Error('Configure MSG91 AuthKey, widget ID, widget token and test numbers');
+ if(!authkey||!widgetId||!tokenAuth||(!live&&!allowed.size))throw new Error('Configure MSG91 AuthKey, widget ID, widget token and test numbers');
 
  function checkPhone(input) {
   const phone=canonicalPhone(input);
-  if(!allowed.has(phone))throw new DomainError(403,'This number is outside the private SMS test');
+  if(!live&&!allowed.has(phone))throw new DomainError(403,'This number is outside the private SMS test');
   return phone;
  }
 
