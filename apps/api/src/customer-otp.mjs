@@ -1,8 +1,11 @@
+import {request as httpsRequest} from 'node:https';
 import {DomainError,canonicalPhone} from './core.mjs';
 
-export function createCustomerOtp(env=process.env,request=fetch) {
+export function createCustomerOtp(env=process.env,request) {
  const mode=env.CUSTOMER_OTP_MODE||'mock';
  if(mode==='mock')return null;
+ if(mode==='msg91-widget')return createMsg91Widget(env,request??msg91Ipv4Request);
+ request??=fetch;
  if(mode==='msg91-uat')return createMsg91Otp(env,request);
  if(mode!=='supabase-uat')throw new Error('Invalid CUSTOMER_OTP_MODE');
  const url=new URL(env.SUPABASE_AUTH_URL||'invalid');
@@ -120,4 +123,57 @@ function createMsg91Otp(env, request) {
    }finally{challenge.busy=false;}
   }
  };
+}
+
+function createMsg91Widget(env,request) {
+ const {MSG91_AUTH_KEY:authkey,MSG91_WIDGET_ID:widgetId,MSG91_WIDGET_TOKEN:tokenAuth}=env;
+ const allowed=new Set((env.CUSTOMER_OTP_TEST_NUMBERS||'').split(',').filter(value=>value.trim()).map(canonicalPhone));
+ if(!authkey||!widgetId||!tokenAuth||!allowed.size)throw new Error('Configure MSG91 AuthKey, widget ID, widget token and test numbers');
+
+ function checkPhone(input) {
+  const phone=canonicalPhone(input);
+  if(!allowed.has(phone))throw new DomainError(403,'This number is outside the private SMS test');
+  return phone;
+ }
+
+ return {
+  widget:{provider:'msg91',widgetId,tokenAuth},
+  async send(input) {
+   checkPhone(input);
+   return {widget:true};
+  },
+  async verify() {throw new DomainError(400,'Use the MSG91 verification window');},
+  async verifyWidget(input,accessToken) {
+   const phone=checkPhone(input);
+   let response,data;
+   try {
+    response=await request('https://control.msg91.com/api/v5/widget/verifyAccessToken',{
+     method:'POST',headers:{'content-type':'application/json'},
+     body:JSON.stringify({authkey,'access-token':accessToken}),
+     redirect:'error',signal:AbortSignal.timeout(10000)
+    });
+    data=await response.json();
+   }catch{throw new DomainError(502,'MSG91 could not be reached');}
+   if(String(data?.code)==='418')throw new DomainError(502,'MSG91 blocked the server IP (418). Check the AuthKey IP allowlist.');
+   if(!response.ok||data?.type!=='success'||!['91'+phone,'+91'+phone,phone].includes(data.message)){
+    throw new DomainError(401,'MSG91 could not verify this mobile number');
+   }
+   return phone;
+  }
+ };
+}
+
+
+function msg91Ipv4Request(url,{method,headers,body,signal}) {
+ return new Promise((resolve,reject)=>{
+  const req=httpsRequest(url,{method,headers:{...headers,'content-length':Buffer.byteLength(body)},family:4,signal},res=>{
+   let data='';
+   res.setEncoding('utf8');
+   res.on('data',chunk=>{data+=chunk;});
+   res.on('error',reject);
+   res.on('end',()=>resolve({ok:res.statusCode>=200&&res.statusCode<300,json:async()=>JSON.parse(data)}));
+  });
+  req.on('error',reject);
+  req.end(body);
+ });
 }

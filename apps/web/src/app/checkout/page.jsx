@@ -1,4 +1,5 @@
 'use client';
+import {openMsg91Widget} from '../../lib/msg91-widget';
 import {useEffect,useState,useRef} from 'react';
 import Link from 'next/link';
 import DemoPaymentDetails from '../../components/DemoPaymentDetails';
@@ -53,8 +54,9 @@ export default function Checkout(){
    const changed=/^\d{6}$/.test(prev.pincode)&&prev.pincode!==nextPin;
    return {...prev,pincode:nextPin,...(changed?{district:'',state:''}:{})};
  });};
- const requestOtp=async()=>{setOtpBusy(true);setError('');try{const r=await api('/api/auth/request-otp',{method:'POST',body:JSON.stringify({phone})});setOtpRequested(true);setNotice(r.devOtp?`Development OTP: ${r.devOtp} — no SMS is sent.`:r.message);}catch(e){setError(e.message);}finally{setOtpBusy(false);}};
- const verifyOtp=async()=>{setOtpBusy(true);setError('');try{const result=await api('/api/auth/verify-otp',{method:'POST',body:JSON.stringify({phone,otp})});sessionStorage.setItem('trd_customer_token',result.token);setToken(result.token);setNotice('Mobile number verified.');update('phone',phone);}catch(e){setError(e.message);}finally{setOtpBusy(false);}};
+ const acceptCustomer=result=>{sessionStorage.setItem('trd_customer_token',result.token);setToken(result.token);setNotice('Mobile number verified.');update('phone',result.phone);};
+ const requestOtp=async()=>{setOtpBusy(true);setError('');try{const r=await api('/api/auth/request-otp',{method:'POST',body:JSON.stringify({phone})});if(r.widget){await openMsg91Widget(phone,acceptCustomer,setError);return;}setOtpRequested(true);setNotice(r.devOtp?`Development OTP: ${r.devOtp} — no SMS is sent.`:r.message);}catch(e){setError(e.message);}finally{setOtpBusy(false);}};
+ const verifyOtp=async()=>{setOtpBusy(true);setError('');try{const result=await api('/api/auth/verify-otp',{method:'POST',body:JSON.stringify({phone,otp})});acceptCustomer(result);}catch(e){setError(e.message);}finally{setOtpBusy(false);}};
  const applyDemoLocation=demo=>{setPaymentMethod(method=>method==='split'?'cod':method);setAddress(a=>({...a,...demo}));};
  const addressComplete=['name','line1','city','district','state'].every(k=>address[k].trim())&&/^[6-9]\d{9}$/.test(address.phone.trim())&&/^\d{6}$/.test(address.pincode.trim());
  const blocker=!cart.items.length?'Add a product to your bag.':!token?'Verify your mobile number in step 1.':!address.city.trim()?'Enter your city or town in step 2.':!addressComplete?'Complete the address, 10-digit contact number and 6-digit PIN in step 2.':!policy?'Terms could not load. Reload them in step 4.':!accepted?'Accept the Terms & Conditions in step 4.':quoteError?'Resolve the price check below before placing the order.':quote?.signature!==quoteSignature?'Checking the current price and offers…':'';

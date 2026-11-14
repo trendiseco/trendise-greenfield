@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import {createCustomerOtp} from './customer-otp.mjs';
 import {authorizeShipmentEvent,applyShipmentEvent} from './shipment-events.mjs';
 import {createShiprocketLookup} from './shiprocket.mjs';
@@ -54,6 +55,20 @@ const handle=async (req,res)=>{
     if(is('POST','/api/checkout/quote'))return respond(res,200,core.onlineQuote(core.session(tokenFrom(req),['customer']),await bodyOf(req)));
     if(is('GET','/api/locations'))return respond(res,200,{locations:core.locations});
     if(is('GET','/api/policy'))return respond(res,200,policyDocument(core.policy));
+    if(is('GET','/api/auth/customer-config'))return respond(res,200,customerOtp?.widget??{});
+    if(is('POST','/api/auth/msg91/verify')){
+      if(!customerOtp?.verifyWidget)throw new DomainError(404,'MSG91 widget sign-in is disabled');
+      const {phone,accessToken}=await bodyOf(req);
+      if(typeof accessToken!=='string'||accessToken.length>8192||!accessToken)throw new DomainError(400,'Missing SMS verification token');
+      const key='msg91:'+createHash('sha256').update(accessToken).digest('hex');
+      const verified=await customerOtp.verifyWidget(phone,accessToken);
+      return await core.serialized(()=>{
+        if(core.eventIds.has(key))throw new DomainError(409,'Request a new SMS code');
+        const session=core.issueCustomerSession(verified,{smsVerified:true});
+        core.setIdempotent(key,'used',true);
+        return respond(res,200,session);
+      });
+    }
     if(is('POST','/api/auth/request-otp')){const b=await bodyOf(req);return respond(res,200,customerOtp?await customerOtp.send(b.phone):core.requestOtp(String(b.phone||'')));}
     if(is('POST','/api/auth/verify-otp')){const b=await bodyOf(req);return respond(res,200,customerOtp?core.issueCustomerSession(await customerOtp.verify(b.phone,String(b.otp||'')),{smsVerified:true}):core.verifyOtp(String(b.phone||''),String(b.otp||'')));}
     if(is('POST','/api/auth/staff')){const b=await bodyOf(req);return respond(res,200,core.staffLogin(String(b.role||''),String(b.pin||''),String(b.userId||b.role||'')));}

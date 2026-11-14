@@ -148,3 +148,7 @@ for the test recipient, and keep the AuthKey's IP allowlist pointed at the
 backend's outbound IP. The AuthKey stays on the server. After MSG91 verifies the
 code, TRENDISE checks that the verified number matches the requested number
 before creating a customer session. The database continues to hold order history.
+
+Use `CUSTOMER_OTP_MODE=msg91-widget` with `MSG91_WIDGET_TOKEN` from MSG91
+Client Side Integration to use MSG91's browser CAPTCHA. The widget token is
+browser-facing. Keep the separate AuthKey in the backend environment.

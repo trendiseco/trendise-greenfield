@@ -65,3 +65,22 @@ test('MSG91 binds OTP verification to the requested number and consumes the chal
  assert.equal(await otp.verify(phone,'654321'),phone);
  await assert.rejects(otp.verify(phone,'654321'),{status:401});
 });
+
+test('MSG91 browser widget checks identity server-side and rejects token replay',async()=>{
+ const phone='9999900001';
+ const provider=createCustomerOtp({CUSTOMER_OTP_MODE:'msg91-widget',MSG91_AUTH_KEY:'test-key',
+  MSG91_WIDGET_ID:'widget',MSG91_WIDGET_TOKEN:'browser-token',CUSTOMER_OTP_TEST_NUMBERS:phone},
+ async(_url,options)=>Response.json({type:'success',message:JSON.parse(options.body)['access-token']==='right'?'91'+phone:'919999900002'}));
+ const server=createServer(new Commerce(),undefined,provider);
+ server.listen(0,'127.0.0.1');await once(server,'listening');
+ try{
+  const base='http://127.0.0.1:'+server.address().port;
+  const verify=accessToken=>fetch(base+'/api/auth/msg91/verify',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({phone,accessToken})});
+  assert.deepEqual(await (await fetch(base+'/api/auth/customer-config')).json(),{provider:'msg91',widgetId:'widget',tokenAuth:'browser-token'});
+  assert.equal((await verify('wrong')).status,401);
+  const signedIn=await verify('right');assert.equal(signedIn.status,200);
+  const {token}=await signedIn.json();
+  assert.equal((await fetch(base+'/api/orders',{headers:{authorization:'Bearer '+token}})).status,200);
+  assert.equal((await verify('right')).status,409);
+ }finally{await new Promise(resolve=>server.close(resolve));}
+});
