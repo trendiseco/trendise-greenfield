@@ -19,3 +19,24 @@ test('published website visibility and inactive variants protect direct checkout
 
 test('media validates contents and customer ownership, birthday paused flag reflected',async()=>{const c=new Commerce();const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';await assert.rejects(c.uploadMedia({role:'customer'},{mime:'image/png',data:png}),{status:403});await assert.rejects(c.uploadMedia(admin,{mime:'image/png',data:'YWJj'}),{status:400});const asset=await c.uploadMedia(admin,{mime:'image/png',data:png,name:'Mock image'});assert.match(asset.url,/^\/api\/media\//);assert.ok(c.website.media[asset.id]);assert.throws(()=>c.customerView({role:'warehouse'}),{status:403});await c.saveCustomer(customer,{name:'Mock',birthday:'1995-11-15'});c.clock=()=>new Date('2026-11-10');await c.saveRewardRules(admin,{...c.website.rules,birthdayEnabled:false});assert.equal(c.customerView(customer).birthdayEligible,false);});
 test('phone normalization cannot create separate reward identities for country-code formats',()=>{const c=new Commerce();c.requestOtp('+91 9876543210');const login=c.verifyOtp('9876543210','123456');assert.equal(c.session(login.token).phone,'9876543210');assert.throws(()=>c.requestOtp('1234567899876543210'),{status:400});});
+
+test('scoped website offers persist and price checkout independently of POS',async()=>{
+ const {c,body}=setup(),{sku}=body.items[0],{variant,product}=c.product(sku);
+ assert.throws(()=>c.savePosPromotion({role:'pos'},{sku,type:'percent',value:10},true),{status:403});
+ c.savePosPromotion(admin,{scope:'product',target:product.id,type:'percent',value:10},true);
+ assert.equal(c.listing()[0].variants[0].price,1349.10);
+ assert.equal(c.posInventory({role:'pos'}).products[0].variants[0].salePrice,1499);
+ assert.equal(c.onlineQuote(customer,body).total,1349.10);
+ await c.saveCoupon(admin,offer());
+ assert.equal(c.onlineQuote(customer,{...body,coupon:'DEMO20'}).total,1079.28);
+ assert.throws(()=>c.importPosPrices(admin,[{sku,barcode:variant.barcode,price:990},{sku,barcode:'wrong',price:990}],true),{status:400});
+ assert.equal(c.onlineQuote(customer,body).total,1349.10);
+ c.importPosPrices(admin,[{sku,barcode:variant.barcode,price:990}],true);
+ const restarted=new Commerce();restore(restarted,structuredClone(snapshot(c)));
+ assert.deepEqual(restarted.websitePublic().variantPrices[sku],{price:990,regularPrice:1499});
+ const order=await restarted.placeOrder(customer,{...body,paymentMethod:'cod'},'website-promotion-test');
+ assert.equal(order.order.quote.total,990);
+ restarted.savePosPromotion(admin,{scope:'all',type:'none'},true);
+ assert.equal(restarted.onlineQuote(customer,body).total,1499);
+ assert.equal(order.order.quote.total,990);
+});

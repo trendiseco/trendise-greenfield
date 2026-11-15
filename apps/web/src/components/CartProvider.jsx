@@ -6,7 +6,7 @@ import React,{createContext,useContext,useEffect,useState} from 'react';
 const CartCtx=createContext(null);
 export function CartProvider({children}){
   const [items,setItems]=useState([]);
-  const {coupons}=useSite();
+  const {coupons,variantPrices}=useSite();
   const [ready,setReady]=useState(false);
   useEffect(()=>{try{const saved=JSON.parse(localStorage.getItem('trendise-dev-cart')||'[]');if(Array.isArray(saved))setItems(saved);}catch{}setReady(true);},[]);
   useEffect(()=>{if(ready)localStorage.setItem('trendise-dev-cart',JSON.stringify(items));},[items,ready]);
@@ -18,7 +18,8 @@ export function CartProvider({children}){
   const update=(sku,qty)=>setItems(prev=>prev.map(x=>x.sku===sku?{...x,qty:Math.max(0,Math.min(25,qty))}:x).filter(x=>x.qty>0));
   const remove=sku=>setItems(prev=>prev.filter(x=>x.sku!==sku));
   const clear=()=>setItems([]);
-  const subtotal=items.reduce((n,x)=>n+x.qty*x.price,0),offer=productOffer(subtotal,coupons);
-  return <CartCtx.Provider value={{offer,ready,items,add,update,remove,clear,count:items.reduce((n,x)=>n+x.qty,0),subtotal:items.reduce((n,x)=>n+x.qty*x.price,0)}}>{children}</CartCtx.Provider>;
+  const priced=items.map(item=>({...item,...variantPrices?.[item.sku]}));
+  const subtotal=priced.reduce((n,x)=>n+x.qty*x.price,0),offer=productOffer(subtotal,coupons);
+  return <CartCtx.Provider value={{offer,ready,items:priced,add,update,remove,clear,count:items.reduce((n,x)=>n+x.qty,0),subtotal}}>{children}</CartCtx.Provider>;
 }
 export function useCart(){const cart=useContext(CartCtx);if(!cart)throw new Error('CartProvider missing');return cart;}

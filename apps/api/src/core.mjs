@@ -71,7 +71,7 @@ export class Commerce {
     return this.products.filter(product=>!this.hiddenCategories.includes(product.category)&&(channel==='store'||product.websiteVisible!==false)).map(product=>({
       ...product,
       variants:product.variants.map(({posPrice,...variant})=>({
-        ...variant, ...(channel==='store'&&posPrice!=null?{posPrice}:{}), available:this.available(variant.sku)
+        ...variant, ...(channel==='store'?(posPrice!=null?{posPrice}:{}):this.websitePriceFields(variant)), available:this.available(variant.sku)
       }))
     }));
   }
@@ -87,8 +87,12 @@ export class Commerce {
   staffLogin(role,pin,userId=role) {if(!this.roles[role]||pin!=='1234')throw new DomainError(401,'Invalid mock staff credentials');const user=this.users.find(u=>u.id===userId&&u.role===role&&u.active);if(!user)throw new DomainError(401,'Inactive or unknown demo user');const token=randomUUID();this.sessions.set(token,{role,userId:user.id,locationId:user.locationId});return {token,role};}
   session(token,allowed) {const session=this.sessions.get(token);if(!session||(session.expiresAt&&session.expiresAt<=Date.now())||(session.role==='customer'&&this.requireVerifiedSms&&!session.smsVerified))throw new DomainError(401,'Please log in');if(session.role==='customer')session.phone=String(session.phone).replace(/\D/g,'').slice(-10);if(session.userId){const user=this.users.find(u=>u.id===session.userId&&u.active);if(!user)throw new DomainError(401,'Staff access revoked');session.role=user.role;session.locationId=user.locationId;}if(allowed&&!allowed.includes(session.role))throw new DomainError(403,'You do not have permission for this action');return session;}
   normalizeLines(lines) {if(!Array.isArray(lines)||!lines.length)throw new DomainError(400,'Add at least one product');const map=new Map();for(const raw of lines){const sku=String(raw.sku||'');const qty=Number(raw.qty);if(!Number.isInteger(qty)||qty<1||qty>25)throw new DomainError(400,'Quantity must be between 1 and 25');if(this.product(sku).variant.active===false)throw new DomainError(409,'Variant is inactive');map.set(sku,(map.get(sku)||0)+qty);}return [...map].map(([sku,qty])=>{if(qty>25)throw new DomainError(400,'Maximum quantity exceeded');return {sku,qty};});}
+  websitePriceFields(variant) {
+    const {regularPrice,salePrice}=this.posPricing(variant,true);
+    return {price:salePrice,regularPrice};
+  }
   price(lines,channel,coupon) {
-    const items=lines.map(line=>{const {product,variant}=this.product(line.sku);return {sku:line.sku,name:product.name,color:variant.color,size:variant.size,barcode:variant.barcode,qty:line.qty,unitPrice:variant.price,lineTotal:money(variant.price*line.qty)};});
+    const items=lines.map(line=>{const {product,variant}=this.product(line.sku);const price=channel==='online'?this.websitePriceFields(variant).price:variant.price;return {sku:line.sku,name:product.name,color:variant.color,size:variant.size,barcode:variant.barcode,qty:line.qty,unitPrice:price,lineTotal:money(price*line.qty)};});
     const subtotal=money(items.reduce((n,item)=>n+item.lineTotal,0));
     const allowed=channel==='store'?{}:{WELCOME10:0.10};
     if(coupon&&!Object.hasOwn(allowed,coupon))throw new DomainError(400,'Coupon is not valid for this sales channel','INVALID_COUPON');

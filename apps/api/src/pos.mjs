@@ -41,9 +41,9 @@ export const posMethods = {
     return location;
   },
 
-  posPricing(variant) {
-    const regular = cents(variant.posPrice ?? variant.price);
-    const rule = this.posPromotions[variant.sku];
+  posPricing(variant, online=false) {
+    const regular = cents(online?variant.price:variant.posPrice ?? variant.price);
+    const rule = (online?this.website.promotions:this.posPromotions)?.[variant.sku];
     const sale = rule?.type === 'fixed' ? Math.min(regular, cents(rule.value))
       : rule?.type === 'percent' ? Math.max(1, Math.round(regular * (100 - rule.value) / 100)) : regular;
     return {regularPrice: rupees(regular), salePrice: rupees(sale)};
@@ -77,47 +77,56 @@ export const posMethods = {
       gst: rupees(gst), taxable: rupees(total - gst), gstRate: 5, currency: 'INR', shipping: 0, coupon: null};
   },
 
-  posPromotionList(session) {
-    if (session.role !== 'superadmin') throw new DomainError(403, 'Super Admin required');
+  posPromotionList(session, online=false) {
+    if(online)this.permit(session,'offers.manage');
+    else if (session.role !== 'superadmin') throw new DomainError(403, 'Super Admin required');
     return Object.fromEntries(this.products.flatMap(product => product.variants.map(variant => [
       variant.sku, {productId:product.id, name:product.name, category:product.category, barcode:variant.barcode,
-        color:variant.color, size:variant.size, active:variant.active!==false, websitePrice:variant.price,
+        color:variant.color, size:variant.size, active:variant.active!==false, websitePrice:variant.price, storePrice:variant.posPrice??variant.price,
         stock:this.stock[variant.sku], ...this.posPricing(variant), rule:this.posPromotions[variant.sku] ?? null}
     ])));
   },
 
-  savePosPromotion(session, {sku, scope='variant', target, type, value}) {
-    const catalog = this.posPromotionList(session);
+  savePosPromotion(session, {sku, scope='variant', target, type, value}, online=false) {
+    const catalog = this.posPromotionList(session,online);
     if (!['variant','product','category','all'].includes(scope)) throw new DomainError(400,'Choose a promotion scope');
     const entries = Object.entries(catalog).filter(([key,entry]) =>
       scope==='all'||(scope==='variant'&&key===sku)||(scope==='product'&&entry.productId===target)||(scope==='category'&&entry.category===target));
     if (!entries.length) throw new DomainError(400,'Choose a scope with published variants');
     if (type!=='none' && (!['percent','fixed'].includes(type)||!Number.isFinite(value)||cents(value)<1||
       (type==='percent'&&cents(value)>=10000)||(type==='fixed'&&entries.some(([,entry])=>cents(value)>cents(entry.regularPrice))))) {
-      throw new DomainError(400,'Use a discount below 100% or a flat price at or below every selected store price');
+      throw new DomainError(400,'Use a discount below 100% or a flat price at or below every selected regular price');
     }
+    const promotions=online?(this.website.promotions??=Object.create(null)):this.posPromotions;
     for (const [key] of entries) {
-      if (type==='none') delete this.posPromotions[key];
-      else this.posPromotions[key]={type,value:rupees(cents(value))};
+      if (type==='none') delete promotions[key];
+      else promotions[key]={type,value:rupees(cents(value))};
     }
-    this.event(session,'POS_PROMOTION_UPDATED',target||sku||scope);
-    return this.posPromotionList(session);
+    this.event(session,online?'WEBSITE_PROMOTION_UPDATED':'POS_PROMOTION_UPDATED',target||sku||scope);
+    return this.posPromotionList(session,online);
   },
 
-  importPosPrices(session, rows) {
-    const catalog = this.posPromotionList(session);
+  importPosPrices(session, rows, online=false) {
+    const catalog = this.posPromotionList(session,online);
     if (!Array.isArray(rows)||!rows.length||rows.length>10000) throw new DomainError(400,'Upload 1 to 10,000 price rows');
     const seen=new Set();
     const changes=rows.map((row,index)=>{
       const {sku,barcode,price}=row??{};
       if (!Object.hasOwn(catalog,sku)||catalog[sku].barcode!==barcode||seen.has(sku)||typeof price!=='number'||
-        !Number.isFinite(price)||price<0.01||price>1000000) throw new DomainError(400,`Excel row ${index+2}: check SKU, barcode, duplicate rows and price`);
+        !Number.isFinite(price)||price<0.01||price>1000000||(online&&cents(price)>cents(catalog[sku].regularPrice))) throw new DomainError(400,`Excel row ${index+2}: check SKU, barcode, duplicate rows and price`);
       seen.add(sku);
       return {sku,price:rupees(cents(price))};
     });
     let updated=0;
     for (const {sku,price} of changes) {
       if (price===catalog[sku].salePrice) continue;
+      if(online){
+        const promotions=this.website.promotions??=Object.create(null);
+        if(price===catalog[sku].regularPrice)delete promotions[sku];
+        else promotions[sku]={type:'fixed',value:price};
+        updated++;
+        continue;
+      }
       const {product,variant}=this.product(sku);
       variant.posPrice=price;
       const draft=this.drafts[product.id];
@@ -126,8 +135,8 @@ export const posMethods = {
       delete this.posPromotions[sku];
       updated++;
     }
-    if(updated)this.event(session,'POS_PRICES_IMPORTED',String(updated));
-    return {updated,catalog:this.posPromotionList(session)};
+    if(updated)this.event(session,online?'WEBSITE_PRICES_IMPORTED':'POS_PRICES_IMPORTED',String(updated));
+    return {updated,catalog:this.posPromotionList(session,online)};
   },
 
   posDashboard(session, period, year = null, allStores = false) {

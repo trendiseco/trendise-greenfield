@@ -124,6 +124,9 @@ const handle=async (req,res)=>{
       const staff=core.session(tokenFrom(req));
       if(is('GET','/api/admin/pos-terms'))return respond(res,200,core.posTermsSettings(staff));
       if(is('POST','/api/admin/pos-terms'))return respond(res,200,core.savePosTerms(staff,(await bodyOf(req))?.text));
+      if(is('GET','/api/admin/website-promotions'))return respond(res,200,core.posPromotionList(staff,true));
+      if(is('POST','/api/admin/website-promotions'))return respond(res,200,core.savePosPromotion(staff,await bodyOf(req),true));
+      if(is('POST','/api/admin/website-price-import'))return respond(res,200,core.importPosPrices(staff,(await bodyOf(req))?.rows,true));
       if(is('GET','/api/admin/pos-promotions'))return respond(res,200,core.posPromotionList(staff));
       if(is('POST','/api/admin/pos-price-import'))return respond(res,200,core.importPosPrices(staff,(await bodyOf(req))?.rows));
       if(is('POST','/api/admin/pos-promotions'))return respond(res,200,core.savePosPromotion(staff,await bodyOf(req)));
