@@ -4,6 +4,7 @@ import StorePhoto from '../../components/StorePhoto';
 import PosHistory,{PosReceipt,PosSaleList} from '../../components/PosHistory';
 import {api,cash,uniqueKey} from '../../lib/api';
 
+const refreshInterval=5000;
 const periods={today:'Today',week:'This week',month:'This month',year:'This year',previous:'Select a year'};
 
 function Dashboard({token,onReceipt}) {
@@ -12,14 +13,29 @@ function Dashboard({token,onReceipt}) {
  useEffect(()=>{
   const controller=new AbortController();
   const query=period==='previous'?'period=year'+(year?'&year='+year:''):'period='+period;
-  api('/api/pos/dashboard?'+query,{token,signal:controller.signal}).then(result=>{
-   setYears(result.years);
-   setReport(result);
-   if(period==='previous'&&!year)setYear(String(result.years.find(value=>value<result.currentYear)??result.currentYear));
-  }).catch(error=>{
-   if(!controller.signal.aborted)setError(error.message);
-  });
-  return ()=>controller.abort();
+  let pending=false;
+  const refresh=async()=>{
+   if(pending||document.hidden)return;
+   pending=true;
+   try {
+    const result=await api('/api/pos/dashboard?'+query,{token,signal:controller.signal});
+    if(controller.signal.aborted)return;
+    setYears(result.years);
+    setReport(result);
+    setError('');
+    if(period==='previous'&&!year)setYear(String(result.years.find(value=>value<result.currentYear)??result.currentYear));
+   } catch(error){
+    if(!controller.signal.aborted)setError(error.message);
+   } finally {pending=false;}
+  };
+  refresh();
+  const timer=setInterval(refresh,refreshInterval);
+  window.addEventListener('focus',refresh);
+  return ()=>{
+   clearInterval(timer);
+   window.removeEventListener('focus',refresh);
+   controller.abort();
+  };
  },[period,year,token,revision]);
  async function createExamples(){
   setCreating(true);setError('');setNotice('');
@@ -46,21 +62,45 @@ export default function Pos(){
  const [scan,setScan]=useState(''),[cart,setCart]=useState([]),[name,setName]=useState(''),[phone,setPhone]=useState('');
  const [method,setMethod]=useState('UPI'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[receipt,setReceipt]=useState(null),[search,setSearch]=useState(''),[tab,setTab]=useState('billing');
  const [scanStatus,setScanStatus]=useState('');
- const scanner=useRef(null),attempt=useRef(null),saving=useRef(false);
+ const [stockRefreshError,setStockRefreshError]=useState('');
+ const scanner=useRef(null),attempt=useRef(null),saving=useRef(false),inventoryRequest=useRef(0);
  useEffect(()=>{
   if(!token)return;
   const controller=new AbortController();
-  const update=()=>api('/api/pos/inventory',{token,signal:controller.signal}).then(data=>{
-   if(!controller.signal.aborted)setInventory(data);
-  }).catch(error=>{if(!controller.signal.aborted)setError(error.message);});
+  let pending=false;
+  const update=async()=>{
+   if(document.hidden||pending||saving.current)return;
+   pending=true;
+   try{
+    await refresh(token,controller.signal);
+   } finally{pending=false;}
+  };
   const onStorage=event=>{if(['trd_categories_updated','trd_pos_prices_updated','trd_stock_transferred'].includes(event.key))update();};
-  const timer=setInterval(()=>{if(!document.hidden)update();},15000);
+  const timer=setInterval(update,refreshInterval);
   window.addEventListener('focus',update);
   window.addEventListener('storage',onStorage);
-  return ()=>{clearInterval(timer);controller.abort();window.removeEventListener('focus',update);window.removeEventListener('storage',onStorage);};
+  document.addEventListener('visibilitychange',update);
+  return ()=>{
+   clearInterval(timer);
+   controller.abort();
+   window.removeEventListener('focus',update);
+   window.removeEventListener('storage',onStorage);
+   document.removeEventListener('visibilitychange',update);
+  };
  },[token]);
  const all=useMemo(()=>inventory?.products.flatMap(product=>product.variants.map(variant=>({...variant,product})))||[],[inventory]);
- const refresh=async(t=token)=>{try{setInventory(await api('/api/pos/inventory',{token:t}));}catch(error){setError(error.message);}};
+ const refresh=async(t=token,signal)=>{
+  const request=++inventoryRequest.current;
+  try{
+   const data=await api('/api/pos/inventory',{token:t,signal});
+   if(request===inventoryRequest.current&&!signal?.aborted){
+    setInventory(data);
+    setStockRefreshError('');
+   }
+  } catch(error){
+   if(request===inventoryRequest.current&&!signal?.aborted)setStockRefreshError(error.message);
+  }
+ };
  useEffect(()=>{const t=sessionStorage.getItem('trd_pos_token');if(t){setToken(t);refresh(t);}},[]);
  async function login(event){
   event.preventDefault();setBusy(true);setError('');
@@ -119,7 +159,7 @@ export default function Pos(){
   finally{saving.current=false;setBusy(false);}
  }
  function openReceipt(sale){setReceipt(sale);window.scrollTo(0,0);}
- function logout(){sessionStorage.removeItem('trd_pos_token');setToken('');setCart([]);setReceipt(null);setName('');setPhone('');setUserId('');setPin('');setScan('');setSearch('');setInventory(null);setError('');setScanStatus('');setTab('billing');attempt.current=null;}
+ function logout(){inventoryRequest.current++;setStockRefreshError('');sessionStorage.removeItem('trd_pos_token');setToken('');setCart([]);setReceipt(null);setName('');setPhone('');setUserId('');setPin('');setScan('');setSearch('');setInventory(null);setError('');setScanStatus('');setTab('billing');attempt.current=null;}
  if(!token)return <main className="container staff-login-page"><form className="staff-login-card" onSubmit={login}><div className="eyebrow">TRENDISE / STORE OPERATIONS</div><h1>Store <em>POS.</em></h1><label>Staff ID<input value={userId} onChange={event=>setUserId(event.target.value)} placeholder="e.g. pos"/></label><label>Demo staff PIN<input required value={pin} onChange={event=>setPin(event.target.value)} placeholder="e.g. 1234" type="password"/></label><button disabled={busy} className="button button-dark full">Sign in to register</button>{error&&<p className="error-box" role="alert">{error}</p>}</form></main>;
  return <main className="staff-shell pos-workspace">
   {receipt&&<PosReceipt sale={receipt} onClose={()=>{setReceipt(null);scanner.current?.focus();}}/>}
@@ -132,11 +172,8 @@ export default function Pos(){
    {tab==='billing'&&<>
     <section className="staff-panel pos-scan-panel"><form className="scanner-row" onSubmit={scanBarcode}>
      <label>Scan garment barcode<input ref={scanner} autoFocus autoComplete="off" value={scan} disabled={busy} onChange={event=>setScan(event.target.value)} placeholder="e.g. 0012345678905"/></label><button disabled={!scan.trim()||busy}>Add to bill</button>
-    </form><p role="status">{scanStatus||'A keyboard-mode scanner adds the garment when it sends Enter. Billing uses central warehouse stock.'}</p></section>
-    <div className="pos-layout"><section className="staff-panel pos-products"><div className="panel-heading"><h2>Find a product</h2><button disabled={busy} onClick={()=>refresh()}>Refresh stock & prices</button></div>
-     <div className="pos-search"><input aria-label="Search products" placeholder="e.g. Oxford, M or Sky Blue" value={search} onChange={event=>setSearch(event.target.value)}/></div>
-     <div className="pos-product-grid">{all.filter(variant=>`${variant.product.name} ${variant.size} ${variant.color} ${variant.sku}`.toLowerCase().includes(search.toLowerCase())).slice(0,48).map(variant=><button className="pos-product" key={variant.sku} onClick={()=>add(variant)} disabled={busy||!variant.available}><StorePhoto className="pos-product-photo" product={variant.product} color={variant.color}/><span className="pos-product-info"><strong>{variant.product.name}</strong><small>{variant.color} / {variant.size}</small><b>{variant.salePrice<variant.regularPrice&&<del>{cash(variant.regularPrice)} </del>}{cash(variant.salePrice)}</b><em>{variant.available} available</em></span></button>)}</div>
-    </section><aside className="staff-panel pos-register">
+    </form>{stockRefreshError&&<p role="alert" className="error-box">Stock refresh failed. {stockRefreshError}</p>}<p role="status">{scanStatus||'A keyboard-mode scanner adds the garment when it sends Enter. Central stock and prices refresh automatically.'}</p></section>
+    <div className="pos-layout"><aside className="staff-panel pos-register">
      <div className="panel-heading"><h2>Current bill</h2><span>{cart.reduce((sum,item)=>sum+item.qty,0)} items</span></div>
      <div className="pos-bill-lines">{lines.map(({sku,qty,variant})=><div className="pos-bill-row" key={sku}><div className="pos-bill-item"><StorePhoto className="pos-bill-photo" product={variant.product} color={variant.color}/><div><strong>{variant.product.name}</strong><small>{variant.color} / {variant.size} · {sku}</small><div className="qty-control"><button aria-label={`Remove one ${sku}`} disabled={busy} onClick={()=>changeQty(sku,-1)}>−</button><span>{qty}</span><button aria-label={`Add one ${sku}`} disabled={busy} onClick={()=>changeQty(sku,1)}>+</button></div></div></div><b>{cash(qty*variant.salePrice)}</b></div>)}</div>
      <form className="pos-register-bottom" onSubmit={complete}>
@@ -149,7 +186,11 @@ export default function Pos(){
       <div className="pos-grand"><span>Total</span><strong>{cash(total/100)}</strong></div>
       <button className="button button-dark full" disabled={busy||!cart.length}>{busy?'Saving…':'Save bill'}</button>
      </form>
-    </aside></div>
+    </aside>
+    <section className="staff-panel pos-products"><div className="panel-heading"><h2>Find a product</h2><button disabled={busy} onClick={()=>refresh()}>Refresh stock & prices</button></div>
+     <div className="pos-search"><input aria-label="Search products" placeholder="e.g. Oxford, M or Sky Blue" value={search} onChange={event=>setSearch(event.target.value)}/></div>
+     <div className="pos-product-grid">{all.filter(variant=>`${variant.product.name} ${variant.size} ${variant.color} ${variant.sku}`.toLowerCase().includes(search.toLowerCase())).slice(0,48).map(variant=><button className="pos-product" key={variant.sku} onClick={()=>add(variant)} disabled={busy||!variant.available}><StorePhoto className="pos-product-photo" product={variant.product} color={variant.color}/><span className="pos-product-info"><strong>{variant.product.name}</strong><small>{variant.color} / {variant.size}</small><b>{variant.salePrice<variant.regularPrice&&<del>{cash(variant.regularPrice)} </del>}{cash(variant.salePrice)}</b><em>{variant.available} available</em></span></button>)}</div>
+    </section></div>
    </>}
   </div>
  </main>;
