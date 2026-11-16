@@ -20,6 +20,33 @@ test('catalog draft privacy, approval permissions and Super Admin self-approval'
  await c.decideDraft(superadmin,d.product.id,{revision:rejected.revision,action:'reject'});
  assert.equal(c.listing().at(-1).name,'Revised');
 });
+test('opening quantities receive each new variant once at warehouse on publication',async()=>{
+ const c=new Commerce(),p=product();
+ p.variants[0].openingQty=12;
+ p.variants.push({...p.variants[0],sku:'MOCK-L',barcode:'MOCKBAR-L',size:'L',openingQty:5});
+ await assert.rejects(c.saveDraft(admin,{...p,variants:[{...p.variants[0],openingQty:1.5}]}),{status:400});
+ const draft=await c.saveDraft(admin,p);
+ const {id}=draft.product;
+ assert.equal(draft.product.variants[0].openingQty,12);
+ assert.equal(c.stock['MOCK-M'],undefined);
+ await c.submitDraft(admin,id,draft.revision);
+ await c.decideDraft(superadmin,id,{revision:draft.revision,action:'reject'});
+ assert.equal(c.stock['MOCK-M'],undefined);
+ const retry=await c.saveDraft(admin,{...draft.product,revision:draft.revision});
+ await c.submitDraft(admin,id,retry.revision);
+ await c.decideDraft(superadmin,id,{revision:retry.revision,action:'publish'});
+ assert.deepEqual(c.stock['MOCK-M'],{'warehouse-hyd':12,'store-hyd-01':0});
+ assert.deepEqual(c.stock['MOCK-L'],{'warehouse-hyd':5,'store-hyd-01':0});
+ assert.equal(c.listing().find(p=>p.id===id).variants[0].openingQty,undefined);
+ assert.equal(c.drafts[id].product.variants[0].openingQty,undefined);
+ await assert.rejects(c.decideDraft(superadmin,id,{revision:retry.revision,action:'publish'}),{status:409});
+ const edit=await c.saveDraft(admin,{...c.drafts[id].product,revision:retry.revision});
+ await assert.rejects(c.saveDraft(admin,{...p,id,revision:edit.revision}),{status:400});
+ await c.submitDraft(admin,id,edit.revision);
+ await c.decideDraft(superadmin,id,{revision:edit.revision,action:'publish'});
+ assert.equal(c.stock['MOCK-M']['warehouse-hyd'],12);
+ assert.deepEqual(c.ledger.filter(entry=>entry.reason==='PRODUCT_OPENING_STOCK').map(entry=>entry.delta),[12,5]);
+});
 test('mandatory unique variant barcodes, permanent identities and revision conflicts',async()=>{
  const c=new Commerce();await assert.rejects(c.saveDraft(admin,{...product(),variants:[{...product().variants[0],barcode:''}]}),{code:'BARCODE_REQUIRED'});
  await assert.rejects(c.saveDraft(admin,{...product(),variants:[{...product().variants[0],barcode:c.products[0].variants[0].barcode}]}),{status:409});

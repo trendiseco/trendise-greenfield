@@ -332,7 +332,10 @@ export class Commerce {
       if(typeof v.price!=='number'||!Number.isFinite(v.price)||v.price<=0||v.price>1000000)throw new DomainError(400,row+': website price must be greater than zero and at most ₹10,00,000');
       const posPrice=v.posPrice===undefined?existing?.find(x=>x.sku===v.sku)?.posPrice:v.posPrice;
       if(posPrice!=null&&(typeof posPrice!=='number'||!Number.isFinite(posPrice)||posPrice<0.01||posPrice>1000000))throw new DomainError(400,row+': Store POS price must be between ₹0.01 and ₹10,00,000');
-      skus.add(v.sku);barcodes.add(v.barcode);return {id:v.sku,sku:v.sku,barcode:v.barcode,color:v.color,shade:v.shade||v.color,size:v.size,price:money(v.price),...(posPrice!=null?{posPrice:money(posPrice)}:{}),active:v.active!==false};
+      const openingQty=v.openingQty===undefined?0:v.openingQty;
+      if(!Number.isSafeInteger(openingQty)||openingQty<0||openingQty>100000)throw new DomainError(400,row+': opening quantity must be a whole number from 0 to 100,000');
+      if(openingQty&&existing?.some(x=>x.sku===v.sku))throw new DomainError(400,row+': use Inventory to add stock for published variants');
+      skus.add(v.sku);barcodes.add(v.barcode);return {id:v.sku,sku:v.sku,barcode:v.barcode,color:v.color,shade:v.shade||v.color,size:v.size,price:money(v.price),...(posPrice!=null?{posPrice:money(posPrice)}:{}),...(openingQty?{openingQty}:{}),active:v.active!==false};
     });
     if(this.products.find(x=>x.id===id)?.variants.some(v=>!skus.has(v.sku)))throw new DomainError(409,'Published variants cannot be removed');
     p.images=(p.images||[]).map(image=>{
@@ -383,8 +386,21 @@ export class Commerce {
     if(!['publish','reject'].includes(body.action))throw new DomainError(400,'Select publish or reject');
     if(body.action==='publish'){
       const product=this.validateProduct(d.product,id);const index=this.products.findIndex(p=>p.id===id);
+      const warehouse=this.locations.find(l=>l.id==='warehouse-hyd'&&l.type==='warehouse');
+      if(!warehouse&&product.variants.some(v=>v.openingQty))throw new DomainError(409,'Hyderabad Warehouse is required to receive opening stock');
+      product.variants=product.variants.map(({openingQty=0,...variant})=>{
+        const {sku}=variant;
+        if(!this.stock[sku]){
+          this.stock[sku]=Object.fromEntries(this.locations.map(l=>[l.id,0]));
+          if(openingQty){
+            this.stock[sku][warehouse.id]=openingQty;
+            this.ledger.push({id:randomUUID(),sku,locationId:warehouse.id,delta:openingQty,before:0,after:openingQty,reason:'PRODUCT_OPENING_STOCK',ref:id,at:new Date().toISOString()});
+          }
+        }
+        return variant;
+      });
       if(index<0)this.products.push(product);else this.products[index]=product;
-      for(const v of product.variants)if(!this.stock[v.sku])this.stock[v.sku]=Object.fromEntries(this.locations.map(l=>[l.id,0]));
+      d.product=clone(product);
       d.status='published';
     }else d.status='draft';
     this.approvals.push({id,revision:d.revision,action:body.action,reason:String(body.reason||'').slice(0,1000),actor:session.userId||session.role,at:new Date().toISOString()});
