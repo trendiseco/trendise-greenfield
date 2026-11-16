@@ -72,19 +72,15 @@ export default function Pos(){
   const qty=existing?.qty||0;
   const label=`${variant.product.name} · ${variant.color} / ${variant.size}`;
   if(!variant.available){
-   const warehouseQty=inventory?.stock?.[variant.sku]?.['warehouse-hyd']||0;
-   const stockHint=warehouseQty
-    ? `Hyderabad Warehouse has ${warehouseQty} pcs on hand. Ask Super Admin to transfer stock to this store before billing.`
-    : 'Ask Super Admin to check inventory before billing.';
    setScanStatus('');
-   setError(`${label}: 0 pcs available at ${inventory?.locationName||'this store'}. ${stockHint}`);
+   setError(`${label}: 0 pcs available across store and shared warehouse stock. Check inventory before billing.`);
    return;
   }
   if(qty>=25||qty>=variant.available){
    setScanStatus('');
    setError(qty>=25
     ? `${label}: limit of 25 pcs per variant on one bill reached.`
-    : `${label}: all ${variant.available} available store pcs are already on this bill.`);
+    : `${label}: all ${variant.available} available pcs are already on this bill.`);
    return;
   }
   setCart(lines=>existing?lines.map(line=>line.sku===variant.sku?{...line,qty:line.qty+1}:line):[...lines,{sku:variant.sku,qty:1,variant}]);
@@ -135,10 +131,10 @@ export default function Pos(){
    {tab==='billing'&&<>
     <section className="staff-panel pos-scan-panel"><form className="scanner-row" onSubmit={scanBarcode}>
      <label>Scan garment barcode<input ref={scanner} autoFocus autoComplete="off" value={scan} disabled={busy} onChange={event=>setScan(event.target.value)} placeholder="e.g. 0012345678905"/></label><button disabled={!scan.trim()||busy}>Add to bill</button>
-    </form><p role="status">{scanStatus||'A keyboard-mode scanner adds the garment when it sends Enter.'}</p></section>
+    </form><p role="status">{scanStatus||'A keyboard-mode scanner adds the garment when it sends Enter. Billing checks both store and shared warehouse stock.'}</p></section>
     <div className="pos-layout"><section className="staff-panel pos-products"><div className="panel-heading"><h2>Find a product</h2><button disabled={busy} onClick={()=>refresh()}>Refresh stock & prices</button></div>
      <div className="pos-search"><input aria-label="Search products" placeholder="e.g. Oxford, M or Sky Blue" value={search} onChange={event=>setSearch(event.target.value)}/></div>
-     <div className="pos-product-grid">{all.filter(variant=>`${variant.product.name} ${variant.size} ${variant.color} ${variant.sku}`.toLowerCase().includes(search.toLowerCase())).slice(0,48).map(variant=><button className="pos-product" key={variant.sku} onClick={()=>add(variant)} disabled={busy||!variant.available}><StorePhoto className="pos-product-photo" product={variant.product} color={variant.color}/><span className="pos-product-info"><strong>{variant.product.name}</strong><small>{variant.color} / {variant.size}</small><b>{variant.salePrice<variant.regularPrice&&<del>{cash(variant.regularPrice)} </del>}{cash(variant.salePrice)}</b><em>{variant.available} in store</em></span></button>)}</div>
+     <div className="pos-product-grid">{all.filter(variant=>`${variant.product.name} ${variant.size} ${variant.color} ${variant.sku}`.toLowerCase().includes(search.toLowerCase())).slice(0,48).map(variant=><button className="pos-product" key={variant.sku} onClick={()=>add(variant)} disabled={busy||!variant.available}><StorePhoto className="pos-product-photo" product={variant.product} color={variant.color}/><span className="pos-product-info"><strong>{variant.product.name}</strong><small>{variant.color} / {variant.size}</small><b>{variant.salePrice<variant.regularPrice&&<del>{cash(variant.regularPrice)} </del>}{cash(variant.salePrice)}</b><em>{variant.available} available</em></span></button>)}</div>
     </section><aside className="staff-panel pos-register">
      <div className="panel-heading"><h2>Current bill</h2><span>{cart.reduce((sum,item)=>sum+item.qty,0)} items</span></div>
      <div className="pos-bill-lines">{lines.map(({sku,qty,variant})=><div className="pos-bill-row" key={sku}><div className="pos-bill-item"><StorePhoto className="pos-bill-photo" product={variant.product} color={variant.color}/><div><strong>{variant.product.name}</strong><small>{variant.color} / {variant.size} · {sku}</small><div className="qty-control"><button aria-label={`Remove one ${sku}`} disabled={busy} onClick={()=>changeQty(sku,-1)}>−</button><span>{qty}</span><button aria-label={`Add one ${sku}`} disabled={busy} onClick={()=>changeQty(sku,1)}>+</button></div></div></div><b>{cash(qty*variant.salePrice)}</b></div>)}</div>

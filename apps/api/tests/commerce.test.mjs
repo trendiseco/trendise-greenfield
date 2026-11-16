@@ -51,8 +51,9 @@ test('warehouse rejects wrong pick code and barcode; dispatch blocked until full
  const shipped=await app.dispatch(warehouse,orderId);assert.equal(shipped.status,'shipped');assert.equal(shipped.shipment.provider,'MOCK_SHIPROCKET');
 });
 test('customer account cannot access POS or warehouse actions',async()=>{const app=c(),session=signin(app);await assert.rejects(()=>app.completePosSale(session,{items:[],idempotencyKey:'xabc123'}),e=>e.status===403);});
-test('cannot oversell last store unit, even with simultaneous POS requests',async()=>{
+test('cannot oversell the shared pool, even with simultaneous POS requests',async()=>{
  const app=c(),sku=app.products[0].variants[0].sku,session=app.session(app.staffLogin('pos','1234').token);
+ app.stock[sku]['warehouse-hyd']=0;
  const run=key=>app.completePosSale(session,{items:[{sku,qty:3}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'Cash',idempotencyKey:key});
  const outcomes=await Promise.allSettled([run('pos-parallel-a'),run('pos-parallel-b')]);
  assert.equal(outcomes.filter(x=>x.status==='fulfilled').length,1);
@@ -72,4 +73,21 @@ test('store POS cannot sell inventory already reserved online at its location',a
  const pos=app.session(app.staffLogin('pos','1234').token);
  await assert.rejects(()=>app.completePosSale(pos,{items:[{sku,qty:2}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'Cash',idempotencyKey:'held-online-key'}),e=>e.code==='INSUFFICIENT_STOCK');
  assert.equal(app.available(sku),1);
+});
+
+test('warehouse-only stock is available to POS and website from the same balance',async()=>{
+ const app=c(),sku=app.products[0].variants[0].sku;
+ const pos=app.session(app.staffLogin('pos','1234').token);
+ app.stock[sku]['store-hyd-01']=0;
+ app.stock[sku]['warehouse-hyd']=5;
+ const posAvailable=()=>app.posInventory(pos).products.flatMap(p=>p.variants).find(v=>v.sku===sku).available;
+ assert.equal(posAvailable(),5);
+ assert.equal(app.available(sku),5);
+ await app.startCheckout(signin(app),{items:[{sku,qty:3}],address,acceptedPolicyVersion:app.version});
+ assert.equal(posAvailable(),2);
+ await app.completePosSale(pos,{items:[{sku,qty:2}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'Cash',idempotencyKey:'shared-pool-sale'});
+ assert.equal(app.stock[sku]['warehouse-hyd'],3);
+ assert.equal(app.ledger.at(-1).locationId,'warehouse-hyd');
+ assert.equal(posAvailable(),0);
+ assert.equal(app.available(sku),0);
 });

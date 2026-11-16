@@ -101,7 +101,7 @@ export class Commerce {
   }
   allocations(lines,channel='online',locationId=null){
     const result=[];
-    const preferred=channel==='store'?[locationId]:this.locations.filter(x=>x.onlineEligible).sort((a,b)=>Number(b.type==='warehouse')-Number(a.type==='warehouse')).map(x=>x.id);
+    const preferred=channel==='store'?this.posStockLocations(locationId):this.locations.filter(x=>x.onlineEligible).sort((a,b)=>Number(b.type==='warehouse')-Number(a.type==='warehouse')).map(x=>x.id);
     for(const line of lines){let remaining=line.qty;for(const id of preferred){const possible=Math.min(remaining,this.available(line.sku,id));if(possible>0){result.push({sku:line.sku,locationId:id,qty:possible});remaining-=possible;}if(!remaining)break;}if(remaining)throw new DomainError(409,`Not enough stock for ${line.sku}`,'INSUFFICIENT_STOCK');}
     return result;
   }
