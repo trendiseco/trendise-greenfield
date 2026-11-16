@@ -204,7 +204,15 @@ export class Commerce {
         : 'Field 1 needs the LINE barcode for this order. Scan it from the order pick list.','WRONG_PICK_CODE');
     }
     const sku=item.sku;
-    if(String(barcode||'').trim()!==item.barcode)throw new DomainError(409,'Field 2: the scanned garment barcode does not match the selected order line.','WRONG_BARCODE');
+    const scanned=String(barcode||'').trim();
+    if(scanned!==item.barcode){
+      const otherLine=order.items.find(line=>line.barcode===scanned);
+      const expected=`${item.name} · ${item.color} / ${item.size} (${item.sku})`;
+      const hint=otherLine
+        ? ` This tag belongs to ${otherLine.name} · ${otherLine.color} / ${otherLine.size}. Select that order line first if you are packing it.`
+        : ' Check that you scanned the garment’s inventory tag.';
+      throw new DomainError(409,`Field 2: expected barcode ${item.barcode} for ${expected}.${hint}`,'WRONG_BARCODE');
+    }
     const count=order.verified[sku]||0;if(count>=item.qty)throw new DomainError(409,'All units on this order line already verified');
     order.verified[sku]=count+1;order.status='picking';
     const complete=order.items.every(i=>order.verified[i.sku]===i.qty);

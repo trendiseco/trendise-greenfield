@@ -4,7 +4,7 @@ import {useCallback,useEffect,useRef,useState} from 'react';
 import {api,cash} from '../../lib/api';
 import {orderCases,orderRequestStatus} from '../../../../../shared/admin-orders.mjs';
 import {cancellationMs,paymentLabels,orderEligibility,returnConditions,returnReasons} from '../../../../../shared/order-policy.mjs';
-import {warehousePickCode} from '../../../../../shared/warehouse-pick.mjs';
+import {resolvePickLine,warehousePickCode} from '../../../../../shared/warehouse-pick.mjs';
 import PickBarcode from '../../components/PickBarcode';
 import StorePhoto from '../../components/StorePhoto';
 import WarehouseInventory from '../../components/WarehouseInventory';
@@ -56,7 +56,14 @@ export default function Warehouse(){
  },[selected,selectedStatus,trackingRevision,token,reload,expireSession]);
  const [feedbackAt,setFeedbackAt]=useState('');
  const feedback=key=>feedbackAt===key&&<ActionFeedback error={error} success={message} pending={busy?'Saving…':''}/>;
- const run=async(task,key='')=>{if(inFlight.current)return;inFlight.current=true;setFeedbackAt(key);B(true);E('');M('');try{await task();}catch(e){if(token&&e.status===401)expireSession();else E(e.message);}finally{B(false);inFlight.current=false;}};
+ const run=async(task,key='')=>{if(inFlight.current)return;inFlight.current=true;setFeedbackAt(key);B(true);E('');M('');try{await task();}catch(e){if(token&&e.status===401)expireSession();else{
+  E(e.message);
+  if(key==='scan')requestAnimationFrame(()=>{
+   const input=e.code==='WRONG_PICK_CODE'?pickInput.current:garmentInput.current;
+   input?.focus();
+   input?.select();
+  });
+ }}finally{B(false);inFlight.current=false;}};
  const login=()=>run(async()=>{const r=await api('/api/auth/staff',{method:'POST',body:JSON.stringify({role:'warehouse',pin})});sessionStorage.setItem('trd_warehouse_token',r.token);T(r.token);P('');});
  const action=(name,body)=>api('/api/warehouse/orders/'+order.id+'/'+name,{token,method:'POST',body:JSON.stringify(body)});
  const scan=e=>{
@@ -73,6 +80,7 @@ export default function Warehouse(){
  const dispatch=()=>run(async()=>{const done=await action('dispatch',{});D(previous=>({...previous,status:done.status,shipment:done.shipment}));M('Mock dispatch recorded. AWB: '+done.shipment.awb);R(n=>n+1);},'dispatch');
  const deliver=()=>run(async()=>{const done=await action('delivered',{});D(previous=>({...previous,status:done.status,deliveredAt:done.deliveredAt,payment:done.payment}));M('Mock delivery recorded.');R(n=>n+1);},'deliver');
  if(!token)return <main className="container staff-login-page operations-login operations-warehouse"><div className="staff-login-card"><span className="panel-icon">▤</span><div className="eyebrow">TRENDISE / WAREHOUSE</div><h1>Warehouse <em>login.</em></h1><p>Verify ordered SKUs against physical garment barcodes before mock dispatch.</p><label>Demo warehouse PIN<input value={pin} type="password" placeholder="Enter 1234" onChange={e=>P(e.target.value)} onKeyDown={e=>e.key==='Enter'&&login()}/></label><button className="button button-dark full" onClick={login} disabled={busy}>Sign in ↗</button>{error&&<p className="error-box" role="alert">{error}</p>}</div></main>;
+ const expectedLine=order?resolvePickLine(order,pickCode):null;
  const active=order&&pickable(order.status),verified=order?.items.every(i=>(order.verified[i.sku]||0)===i.qty),dispatchAfter=order?Date.parse(order.placedAt)+cancellationMs:0,held=Date.now()<dispatchAfter;
  return <main className="staff-shell operations-workspace operations-warehouse">
   <div className="staff-page-header"><div><div className="eyebrow">WAREHOUSE / DEVELOPMENT</div><h1>Warehouse <em>operations.</em></h1><p>Pick and dispatch orders, receive returns and check shared stock.</p></div><div className="button-row"><button className="small-outline" disabled={busy} onClick={()=>R(n=>n+1)}>Refresh</button><button className="small-outline" disabled={busy} onClick={()=>{sessionStorage.removeItem('trd_warehouse_token');T('');setView('orders');O(null);S('');D(null);PC('');BC('');M('');E('');QE('');}}>Sign out</button></div></div>
@@ -142,10 +150,15 @@ export default function Warehouse(){
      </article>)}
     </div>
     {active&&<form className="warehouse-scanner" onSubmit={scan}><h3>Dual barcode verification</h3><p>Use the LINE barcode from the pick list in field 1. Scan the physical tag in field 2. The system checks that the garment belongs to that order line.</p>
-     <label>1 / Order-line barcode<input ref={pickInput} value={pickCode} onChange={e=>PC(e.target.value)} autoComplete="off" placeholder={warehousePickCode(order.id,0)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();if(pickCode.trim())garmentInput.current?.focus();}}}/></label>
-     <label>2 / Physical garment barcode<input ref={garmentInput} value={barcode} onChange={e=>BC(e.target.value)} autoComplete="off" placeholder="Scan the garment label" disabled={!pickCode.trim()}/></label>
+     <label>1 / Order-line barcode<input ref={pickInput} value={pickCode} onChange={e=>{PC(e.target.value);BC('');E('');}} autoComplete="off" placeholder={warehousePickCode(order.id,0)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();if(pickCode.trim())garmentInput.current?.focus();}}}/></label>
+     {expectedLine&&<div className="notice-box" id="warehouse-expected-tag">
+      <strong>Selected: {expectedLine.name} · {expectedLine.color} / {expectedLine.size}</strong>
+      <p>Scan tag barcode <code>{expectedLine.barcode}</code> · SKU {expectedLine.sku} · {order.verified[expectedLine.sku]||0} of {expectedLine.qty} verified</p>
+     </div>}
+     <label>2 / Physical garment barcode<input ref={garmentInput} aria-describedby={expectedLine?'warehouse-expected-tag':undefined} value={barcode} onChange={e=>{BC(e.target.value);E('');}} autoComplete="off" placeholder="Scan the garment label" disabled={!pickCode.trim()}/></label>
      <button className="button button-dark" disabled={busy||!pickCode.trim()||!barcode.trim()}>Verify barcode match ↗</button>
      {feedback('scan')}
+     {feedbackAt==='scan'&&error&&expectedLine&&barcode.trim()&&<p className="hint">Scanner read: <code>{barcode.trim()}</code></p>}
     </form>}
     <div className="warehouse-actions">
      {active&&<><button className="button button-dark full" disabled={busy||held||!verified} onClick={dispatch}>Complete mock dispatch ↗</button>{feedback('dispatch')}<p className="hint">{held?`Dispatch opens ${formatTime(dispatchAfter)}, after the cancellation window.`:'All ordered units must pass both barcode checks before dispatch.'}</p></>}
