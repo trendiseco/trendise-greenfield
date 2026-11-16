@@ -13,7 +13,7 @@ export default function PosPromotions({token,online=false}) {
  const updateKey=online?'trd_website_prices_updated':'trd_pos_prices_updated';
  const [variants,setVariants]=useState({}),[scope,setScope]=useState('variant'),[target,setTarget]=useState('');
  const [type,setType]=useState('none'),[value,setValue]=useState('');
- const [error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false);
+ const [error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState('');
  useEffect(()=>{api(endpoint+'-promotions',{token}).then(setVariants).catch(error=>setError(error.message));},[token,endpoint]);
  const entries=Object.entries(variants);
  const choices=scope==='category'?[...new Set(entries.map(([,entry])=>entry.category))].sort().map(name=>[name,name])
@@ -23,21 +23,21 @@ export default function PosPromotions({token,online=false}) {
   const rule=scope==='variant'?variants[target]?.rule:null;
   setTarget(target);setType(rule?.type||'none');setValue(rule?.value??'');setNotice('');
  }
- async function run(action) {
-  setBusy(true);setError('');setNotice('');
+ async function run(message,action) {
+  setBusy(message);setError('');setNotice('');
   try {await action();} catch(error){setError(error.message);}
-  finally{setBusy(false);}
+  finally{setBusy('');}
  }
  function save(event) {
   event.preventDefault();
-  run(async()=>{
+  run('Saving promotion…',async()=>{
    setVariants(await api(endpoint+'-promotions',{token,method:'POST',body:JSON.stringify({sku:target,scope,target,type,value:Number(value)})}));
    localStorage.setItem(updateKey,String(Date.now()));
    setNotice(label+' promotion saved for the selected variants.');
   });
  }
  function download() {
-  run(async()=>{
+  run('Preparing stock workbook…',async()=>{
    const {default:Excel}=await import('exceljs/dist/exceljs.min.js');
    const book=new Excel.Workbook(),sheet=book.addWorksheet(sheetName);
    sheet.addRow(columns);
@@ -57,7 +57,7 @@ export default function PosPromotions({token,online=false}) {
  function upload(event) {
   const file=event.target.files?.[0];event.target.value='';
   if(!file)return;
-  run(async()=>{
+  run('Importing prices…',async()=>{
    if(file.size>5*1024*1024)throw new Error('Choose an Excel workbook under 5 MB.');
    const {default:Excel}=await import('exceljs/dist/exceljs.min.js');
    const book=new Excel.Workbook();await book.xlsx.load(await file.arrayBuffer());
@@ -91,6 +91,7 @@ export default function PosPromotions({token,online=false}) {
   <p>{online?'Edit Website offer price and upload the workbook. The regular price clears the offer. Existing coupons apply to the offer subtotal.':'Edit the POS scan price column and upload the workbook. Changed prices become the store price and clear any promotion on those rows.'}</p>
   <button disabled={busy||!entries.length} onClick={download}>Download stock workbook</button>
   <label>Upload updated prices<input disabled={busy} type="file" accept=".xlsx" onChange={upload}/></label>
+  <p className={busy?"management-save-status":undefined} role="status">{busy}</p>
   {error&&<p role="alert" className="error-box">{error}</p>}{notice&&<p role="status">{notice}</p>}
  </section>;
 }

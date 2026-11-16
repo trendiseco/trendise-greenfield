@@ -51,7 +51,7 @@ function PosReturn({sale,token,onReturned}) {
   <label>Quantity<input name="qty" type="number" min="1" max="25" required defaultValue="1"/></label>
   <label>Return reason<input name="reason" required maxLength={240} placeholder="e.g. Wrong size"/></label>
   <label><input name="sellable" type="checkbox" required/> Tags and condition checked. Item is sellable and ready for warehouse restock.</label>
-  <button disabled={busy}>Accept return & restock</button>
+  <button disabled={busy}>{busy?"Saving return…":"Accept return & restock"}</button>
   {error&&<p role="alert" className="error-box">{error}</p>}{notice&&<p role="status">{notice}</p>}
  </form>;
 }

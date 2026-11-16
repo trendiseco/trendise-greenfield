@@ -4,7 +4,7 @@ Open Admin → Products → Edit / preview → Fit & size measurements.
 
 Enter measurements for each variant size, in centimetres or inches. Unit changes convert entered values. Tops show body length, flat chest width, shoulder width and sleeve length. Bottoms show outer length, flat waist width, flat hip width, inseam, thigh width and leg opening. Width means across a garment laid flat, not body circumference.
 
-Use Sync rows with product sizes after changing variant sizes. Add measurement notes and tolerance as needed. Save the draft, preview the chart, submit it and have a separate Super Admin publish the revision. Until approval, the public chart stays unchanged.
+Use Sync rows with product sizes after changing variant sizes. Add measurement notes and tolerance as needed. Save the draft, preview the chart, submit it and publish the revision as Super Admin. Until approval, the public chart stays unchanged.
 
 Initial charts on the eight seeded products contain explicitly labelled fictional sample measurements. Replace these with actual measured garments before setting the status to verified. Verified charts require complete positive measurements for every variant size. A missing chart shows an honest unavailable message. Removing a chart persists across restarts.
 

@@ -3,12 +3,22 @@ import assert from 'node:assert/strict';
 import {Commerce} from '../src/core.mjs';
 const admin={role:'admin',userId:'admin'},superadmin={role:'superadmin',userId:'superadmin'};
 const product=()=>({name:'Mock Shirt',slug:'mock-shirt',category:'Shirts',description:'Fictional sample',fabric:'Cotton',fit:'Regular',variants:[{sku:'MOCK-M',barcode:'MOCKBAR-M',color:'Blue',size:'M',price:999}]});
-test('catalog draft -> preview data -> submit -> independent approval -> public catalog',async()=>{
+test('catalog draft privacy, approval permissions and Super Admin self-approval',async()=>{
  const c=new Commerce(),p=product(),d=await c.saveDraft(admin,p);assert.equal(c.listing().length,8);assert.equal(d.status,'draft');
  await assert.rejects(c.decideDraft(superadmin,d.product.id,{revision:1,action:'publish'}),{status:409});
  await c.submitDraft(admin,d.product.id,1);await assert.rejects(c.decideDraft(admin,d.product.id,{revision:1,action:'publish'}),{status:403});
  await c.decideDraft(superadmin,d.product.id,{revision:1,action:'publish'});assert.equal(c.listing().length,9);assert.equal(c.available('MOCK-M'),0);
- const edit=await c.saveDraft(admin,{...d.product,name:'Revised',revision:1});assert.equal(c.listing().at(-1).name,'Mock Shirt');await c.submitDraft(admin,d.product.id,edit.revision);await c.decideDraft(superadmin,d.product.id,{revision:2,action:'reject'});assert.equal(c.listing().at(-1).name,'Mock Shirt');
+ const edit=await c.saveDraft(superadmin,{...d.product,name:'Revised',revision:1});
+ assert.equal(c.listing().at(-1).name,'Mock Shirt');
+ await c.submitDraft(superadmin,d.product.id,edit.revision);
+ await assert.rejects(c.decideDraft(superadmin,d.product.id,{revision:1,action:'publish'}),{status:409});
+ await c.decideDraft(superadmin,d.product.id,{revision:edit.revision,action:'publish'});
+ assert.equal(c.listing().at(-1).name,'Revised');
+ assert.equal(c.approvals.at(-1).actor,superadmin.userId);
+ const rejected=await c.saveDraft(admin,{...edit.product,name:'Rejected',revision:edit.revision});
+ await c.submitDraft(admin,d.product.id,rejected.revision);
+ await c.decideDraft(superadmin,d.product.id,{revision:rejected.revision,action:'reject'});
+ assert.equal(c.listing().at(-1).name,'Revised');
 });
 test('mandatory unique variant barcodes, permanent identities and revision conflicts',async()=>{
  const c=new Commerce();await assert.rejects(c.saveDraft(admin,{...product(),variants:[{...product().variants[0],barcode:''}]}),{code:'BARCODE_REQUIRED'});

@@ -380,7 +380,6 @@ export class Commerce {
   async decideDraft(session,id,body){return this.serialized(()=>{
     this.permit(session,'approvals.decide');const d=this.drafts[id];
     if(!d||d.status!=='pending'||d.revision!==body.revision)throw new DomainError(409,'Approval is stale or not pending');
-    if(d.submittedBy===(session.userId||session.role))throw new DomainError(403,'A different staff member must approve');
     if(!['publish','reject'].includes(body.action))throw new DomainError(400,'Select publish or reject');
     if(body.action==='publish'){
       const product=this.validateProduct(d.product,id);const index=this.products.findIndex(p=>p.id===id);

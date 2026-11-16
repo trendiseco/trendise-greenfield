@@ -8,7 +8,7 @@ Authorized website-focused update to the current greenfield project. All busines
 - Customer account and rewards: http://localhost:3000/account — fictional mobile + demo OTP `123456`.
 - Website: http://localhost:3000/.
 
-Admin now has Website content, Discount coupons, Birthday & loyalty and Customer rewards sections above the product catalog. Super Admin retains those abilities as well. Staff security management remains Super Admin-only. Product publication retains the existing separate Super Admin approval; website content publication is available to Admin.
+Admin now has Website content, Discount coupons, Birthday & loyalty and Customer rewards sections above the product catalog. Super Admin retains those abilities as well. Staff security management remains Super Admin-only. Product publication retains Super Admin approval, including for their own submissions; website content publication is available to Admin.
 
 ## Edit the website
 

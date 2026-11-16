@@ -6,7 +6,7 @@
 - `npm run test:db` with a separate local PostgreSQL 17 test database: passed. Creates and removes its own temporary schema. Migrations and seed reruns are safe. Two independently instantiated durable cores on separate database connections compete for the final store unit; only one completes. A negative inventory write fails the database constraint and rolls back. A fresh core reads committed quantities, sessions, approval, receipt and orders.
 - PostgreSQL HTTP flow: mock OTP → accepted T&C → reserve → payment → warehouse barcode verification → simulated dispatch. Product create → submit → independent publish → receipt → fresh-instance persistence also passed.
 - M01 HTTP regression: customer order, mock payment, warehouse scan/dispatch, POS and shared available quantities passed.
-- Catalog tests: draft privacy, rejection, independent approval, stale revision, required/duplicate barcode, permanent published SKU/barcode, image MIME/signature/alt checks passed.
+- Catalog tests: draft privacy, rejection, approval permissions, Super Admin self-approval, stale revision, required/duplicate barcode, permanent published SKU/barcode, image MIME/signature/alt checks passed.
 - Access tests: unauthorized staff management, restricted custom role, disabled active session, no self-deactivation and no wildcard grant passed.
 - Inventory tests: concurrent final-unit sale, held stock protection, idempotent payment/POS/transfer/receipt and total-preserving transfer passed.
 - `npm run build`: successful production compilation of all original routes and updated admin screen with Next.js 16.4.5. API remains development-only even though web build is compiled for validation.

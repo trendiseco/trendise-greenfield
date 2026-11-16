@@ -40,7 +40,7 @@ Existing Milestone 01 processes may already occupy ports 3000 and 4100. Stop tho
 
 Customer: request OTP with a fictional Indian mobile, enter `123456`. Default staff users `admin`, `superadmin`, `pos`, `warehouse` use their matching role and PIN `1234`. Admin screen supports Admin and Super Admin management accounts; optionally enter a newly created user ID with that role. POS and warehouse retain their dedicated login pages. Custom roles are usable through the staff API and restricted by their permissions; the dedicated management screens target the default management roles.
 
-Admin may edit and submit catalog and inspect inventory; Super Admin approves a different user's submission, manages access and receives/transfers mock stock. Admin retains M01 POS and warehouse permissions unless removed in the role editor. Customers cannot edit catalog, staff or inventory.
+Admin may edit and submit catalog and inspect inventory; Super Admin approves pending submissions, including their own, manages access and receives/transfers mock stock. Admin retains M01 POS and warehouse permissions unless removed in the role editor. Customers cannot edit catalog, staff or inventory.
 
 Website coupons and Super Admin’s automatic POS promotions are configured separately. Payment simulation never charges money; warehouse dispatch never contacts a courier. Maps and AI remain unconnected.
 
@@ -54,7 +54,7 @@ Website coupons and Super Admin’s automatic POS promotions are configured sepa
 
 ## Store POS
 
-1. In Admin → Products, set **Store POS Price** per size and colour. Submit for independent approval as usual. Blank prices use the website price.
+1. In Admin → Products, set **Store POS Price** per size and colour. Submit for Super Admin approval. Blank prices use the website price.
 2. In Super Admin → **Store POS promotions**, select a published variant and enter a percentage off or a flat final price. The register applies it automatically.
 3. Open `/pos`, sign in with the assigned demo staff ID, and use the top barcode field. A keyboard-mode scanner should send Enter after the barcode. Enter the customer name and Indian mobile number, choose a simulated payment method, and save the bill. Print from the saved receipt. Prices include the configured development GST of 5%.
 4. **Dashboard** filters saved bills by day, Monday-start week, month or year in India time. **Customer search** in POS and Admin shows matching store bills and website orders. POS store-bill access is scoped to the assigned store. Older bills saved without a mobile number remain available in the dashboard by date.
