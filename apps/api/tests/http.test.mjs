@@ -22,7 +22,7 @@ test('HTTP: full mock customer -> warehouse -> POS and shared catalog stock',asy
  const orderId=paid.data.orderId;
  core.clock=()=>new Date(Date.parse(paid.data.order.placedAt)+12*60*60*1000);
  const warehouse=(await send(base,'/api/auth/staff',{method:'POST',body:{role:'warehouse',pin:'1234'}})).data.token;
- const verify=await send(base,`/api/warehouse/orders/${orderId}/scan`,{method:'POST',token:warehouse,body:{pickCode:`PICK-${orderId}-${sku}`,barcode:core.product(sku).variant.barcode}});assert.equal(verify.data.complete,true);
+ const verify=await send(base,`/api/warehouse/orders/${orderId}/scan`,{method:'POST',token:warehouse,body:{pickCode:`PICK-${orderId}-${sku}`,barcode:`PICK-${orderId}-${sku}`}});assert.equal(verify.data.complete,true);
  const ship=await send(base,`/api/warehouse/orders/${orderId}/dispatch`,{method:'POST',token:warehouse,body:{}});assert.equal(ship.data.shipment.provider,'MOCK_SHIPROCKET');
  const pos=(await send(base,'/api/auth/staff',{method:'POST',body:{role:'pos',pin:'1234'}})).data.token;
  const afterOnline=(await send(base,'/api/pos/inventory',{token:pos})).data.products[0].variants[0].available;

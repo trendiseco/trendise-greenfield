@@ -10,7 +10,7 @@ test('admin queue and decisions enforce permissions and preserve order and stock
  const body={items:[{sku:v.sku,qty:1}],paymentMethod:'cod',acceptedPolicyVersion:c.version,address:{name:'Test Shopper',phone:customer.phone,line1:'Demo road',city:'Hyderabad',state:'Telangana',pincode:'500001'}};
  const {order,orderId}=await c.placeOrder(customer,body,'admin-order-test');
  c.clock=()=>new Date(Date.parse(order.placedAt)+cancellationMs);
- await c.warehouseVerify(warehouse,orderId,`PICK-${orderId}-${v.sku}`,v.barcode);
+ await c.warehouseVerify(warehouse,orderId,`PICK-${orderId}-${v.sku}`,`PICK-${orderId}-${v.sku}`);
  await c.dispatch(warehouse,orderId);await c.markDelivered(warehouse,orderId);
  await c.requestOrderReturn(customer,orderId,{sku:v.sku,reason:'fit',conditionConfirmed:true});
  const query=new URLSearchParams({status:'needs-review',q:'test shopper'});
@@ -59,8 +59,9 @@ test('return inspection settles discounted lines once and isolates failed stock'
  c.customer(customer).points=100;
  const {order,orderId}=await c.placeOrder(customer,{items,paymentMethod:'card',coupon:'WELCOME10',redeemPoints:10,acceptedPolicyVersion:c.version,address:{name:'Test Shopper',phone:customer.phone,line1:'Demo road',city:'Hyderabad',state:'Telangana',pincode:'500001'}},'return-inspection');
  c.clock=()=>new Date(Date.parse(order.placedAt)+cancellationMs);
- for(const [index,variant] of [first,second].entries()){
-  for(let count=0;count<items[index].qty;count++)await c.warehouseVerify(warehouse,orderId,`LINE-${orderId}-${index+1}`,variant.barcode);
+ for(const [index,item] of items.entries()){
+  const code=`LINE-${orderId}-${index+1}`;
+  for(let count=0;count<item.qty;count++)await c.warehouseVerify(warehouse,orderId,code,code);
  }
  await c.dispatch(warehouse,orderId);await c.markDelivered(warehouse,orderId);
  const pass={sku:first.sku,decision:'pass',reason:'Tags intact and garment unused.'};

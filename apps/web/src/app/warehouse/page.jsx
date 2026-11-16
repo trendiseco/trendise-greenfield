@@ -72,14 +72,14 @@ export default function Warehouse(){
    const result=await action('scan',{pickCode,barcode});
    D(previous=>({...previous,status:'picking',verified:result.allVerified}));
    PC('');BC('');
-   M(`${result.sku}: ${result.scanned}/${result.required} matched. ${result.complete?'All ordered units verified.':'Scan both barcodes for the next unit.'}`);
+   M(`${result.sku}: ${result.scanned}/${result.required} matched. ${result.complete?'All ordered units verified.':'Scan the two matching labels for the next unit.'}`);
    R(n=>n+1);
    requestAnimationFrame(()=>pickInput.current?.focus());
   },'scan');
  };
  const dispatch=()=>run(async()=>{const done=await action('dispatch',{});D(previous=>({...previous,status:done.status,shipment:done.shipment}));M('Mock dispatch recorded. AWB: '+done.shipment.awb);R(n=>n+1);},'dispatch');
  const deliver=()=>run(async()=>{const done=await action('delivered',{});D(previous=>({...previous,status:done.status,deliveredAt:done.deliveredAt,payment:done.payment}));M('Mock delivery recorded.');R(n=>n+1);},'deliver');
- if(!token)return <main className="container staff-login-page operations-login operations-warehouse"><div className="staff-login-card"><span className="panel-icon">▤</span><div className="eyebrow">TRENDISE / WAREHOUSE</div><h1>Warehouse <em>login.</em></h1><p>Verify ordered SKUs against physical garment barcodes before mock dispatch.</p><label>Demo warehouse PIN<input value={pin} type="password" placeholder="Enter 1234" onChange={e=>P(e.target.value)} onKeyDown={e=>e.key==='Enter'&&login()}/></label><button className="button button-dark full" onClick={login} disabled={busy}>Sign in ↗</button>{error&&<p className="error-box" role="alert">{error}</p>}</div></main>;
+ if(!token)return <main className="container staff-login-page operations-login operations-warehouse"><div className="staff-login-card"><span className="panel-icon">▤</span><div className="eyebrow">TRENDISE / WAREHOUSE</div><h1>Warehouse <em>login.</em></h1><p>Match the pick-list code with the same order-line code on the physical label before mock dispatch.</p><label>Demo warehouse PIN<input value={pin} type="password" placeholder="Enter 1234" onChange={e=>P(e.target.value)} onKeyDown={e=>e.key==='Enter'&&login()}/></label><button className="button button-dark full" onClick={login} disabled={busy}>Sign in ↗</button>{error&&<p className="error-box" role="alert">{error}</p>}</div></main>;
  const expectedLine=order?resolvePickLine(order,pickCode):null;
  const active=order&&pickable(order.status),verified=order?.items.every(i=>(order.verified[i.sku]||0)===i.qty),dispatchAfter=order?Date.parse(order.placedAt)+cancellationMs:0,held=Date.now()<dispatchAfter;
  return <main className="staff-shell operations-workspace operations-warehouse">
@@ -139,23 +139,23 @@ export default function Warehouse(){
      {order.items.map((item,index)=><article className="pick-line warehouse-pick-line" key={item.sku}>
       <StorePhoto className="warehouse-product-photo" product={{...item,variants:[{color:item.color}]}} color={item.color} src={item.photo?.src} alt={item.photo?.alt}/>
       <div className="warehouse-pick-info"><h4>{item.name}</h4><p>{[item.category,item.fabric,item.fit].filter(Boolean).join(' · ')}</p>
-       <dl><div><dt>Colour</dt><dd>{item.color}</dd></div><div><dt>Size</dt><dd>{item.size}</dd></div><div><dt>Quantity</dt><dd>{item.qty}</dd></div><div><dt>SKU</dt><dd>{item.sku}</dd></div><div><dt>Garment barcode</dt><dd>{item.barcode}</dd></div><div><dt>Line total</dt><dd>{cash(item.lineTotal)}</dd></div></dl>
+       <dl><div><dt>Colour</dt><dd>{item.color}</dd></div><div><dt>Size</dt><dd>{item.size}</dd></div><div><dt>Quantity</dt><dd>{item.qty}</dd></div><div><dt>SKU</dt><dd>{item.sku}</dd></div><div><dt>Inventory barcode (SKU tag)</dt><dd>{item.barcode}</dd></div><div><dt>Line total</dt><dd>{cash(item.lineTotal)}</dd></div></dl>
        <p className="hint">Pick from: {order.allocations.filter(a=>a.sku===item.sku).map(a=>a.locationName+' × '+a.qty).join(' · ')||'Not recorded'}</p>
        <span className="verified-count">{order.verified[item.sku]||0} / {item.qty} matched</span>
        <div className="warehouse-pick-label"><strong>1 · Order-line barcode</strong><PickBarcode value={warehousePickCode(order.id,index)}/>{active&&<button type="button" className="small-outline warehouse-use-pick-code" disabled={busy} onClick={()=>{
         PC(warehousePickCode(order.id,index));BC('');E('');M('');
         requestAnimationFrame(()=>garmentInput.current?.focus());
-       }}>Use this order line</button>}<small>2 · Scan the barcode attached to the physical garment.</small></div>
+       }}>Use this order line</button>}<small>2 · Scan the same order-line code on the physical label.</small></div>
       </div>
      </article>)}
     </div>
-    {active&&<form className="warehouse-scanner" onSubmit={scan}><h3>Dual barcode verification</h3><p>Use the LINE barcode from the pick list in field 1. Scan the physical tag in field 2. The system checks that the garment belongs to that order line.</p>
+    {active&&<form className="warehouse-scanner" onSubmit={scan}><h3>Dual barcode verification</h3><p>Scan the order-line code from the pick list in field 1. Scan the same code from the physical label in field 2.</p>
      <label>1 / Order-line barcode<input ref={pickInput} value={pickCode} onChange={e=>{PC(e.target.value);BC('');E('');}} autoComplete="off" placeholder={warehousePickCode(order.id,0)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();if(pickCode.trim())garmentInput.current?.focus();}}}/></label>
      {expectedLine&&<div className="notice-box" id="warehouse-expected-tag">
       <strong>Selected: {expectedLine.name} · {expectedLine.color} / {expectedLine.size}</strong>
-      <p>Scan tag barcode <code>{expectedLine.barcode}</code> · SKU {expectedLine.sku} · {order.verified[expectedLine.sku]||0} of {expectedLine.qty} verified</p>
+      <p>Expected physical label <code>{pickCode.trim()}</code> · SKU {expectedLine.sku} · {order.verified[expectedLine.sku]||0} of {expectedLine.qty} verified</p>
      </div>}
-     <label>2 / Physical garment barcode<input ref={garmentInput} aria-describedby={expectedLine?'warehouse-expected-tag':undefined} value={barcode} onChange={e=>{BC(e.target.value);E('');}} autoComplete="off" placeholder="Scan the garment label" disabled={!pickCode.trim()}/></label>
+     <label>2 / Physical order-line barcode<input ref={garmentInput} aria-describedby={expectedLine?'warehouse-expected-tag':undefined} value={barcode} onChange={e=>{BC(e.target.value);E('');}} autoComplete="off" placeholder="Scan the matching order-line label" disabled={!pickCode.trim()}/></label>
      <button className="button button-dark" disabled={busy||!pickCode.trim()||!barcode.trim()}>Verify barcode match ↗</button>
      {feedback('scan')}
      {feedbackAt==='scan'&&error&&expectedLine&&barcode.trim()&&<p className="hint">Scanner read: <code>{barcode.trim()}</code></p>}

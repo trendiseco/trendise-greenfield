@@ -42,13 +42,13 @@ test('warehouse rejects wrong pick code and barcode; dispatch blocked until full
  const warehouse=app.session(app.staffLogin('warehouse','1234').token);
  const pickCode=`PICK-${orderId}-${sku}`, barcode=app.product(sku).variant.barcode, wrong=app.products[1].variants[0].barcode;
  await assert.rejects(()=>app.warehouseVerify(warehouse,orderId,'PICK-TRD-99999-XX',barcode),e=>e.code==='WRONG_PICK_CODE');
- await assert.rejects(()=>app.warehouseVerify(warehouse,orderId,barcode,barcode),e=>e.code==='WRONG_PICK_CODE'&&e.message.includes('Field 1 contains a garment barcode'));
+ await assert.rejects(()=>app.warehouseVerify(warehouse,orderId,barcode,barcode),e=>e.code==='WRONG_PICK_CODE');
  assert.equal(app.orders.get(orderId).verified[sku]||0,0);
- await assert.rejects(()=>app.warehouseVerify(warehouse,orderId,pickCode,wrong),e=>e.code==='WRONG_BARCODE'&&e.message.includes(barcode)&&e.message.includes(sku));
+ await assert.rejects(()=>app.warehouseVerify(warehouse,orderId,pickCode,wrong),e=>e.code==='WRONG_BARCODE'&&e.message.includes(pickCode)&&e.message.includes(sku));
  await assert.rejects(()=>app.dispatch(warehouse,orderId),e=>e.status===409);
- await app.warehouseVerify(warehouse,orderId,pickCode,barcode);
+ await app.warehouseVerify(warehouse,orderId,pickCode,pickCode);
  await assert.rejects(()=>app.dispatch(warehouse,orderId),e=>e.status===409);
- const checked=await app.warehouseVerify(warehouse,orderId,pickCode,barcode);
+ const checked=await app.warehouseVerify(warehouse,orderId,pickCode,pickCode);
  assert.equal(checked.complete,true);
  const shipped=await app.dispatch(warehouse,orderId);assert.equal(shipped.status,'shipped');assert.equal(shipped.shipment.provider,'MOCK_SHIPROCKET');
 });

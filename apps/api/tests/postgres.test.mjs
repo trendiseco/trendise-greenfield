@@ -37,7 +37,7 @@ test('PostgreSQL restart durability, two-process lock, rollback and database con
  const pickingOrder=await call(`/api/warehouse/orders/${paid.orderId}`,undefined,staff.token);
  assert.equal(pickingOrder.items[0].slug,'oxford-formal-shirt');
  assert.ok(pickingOrder.allocations[0].locationName);
- await call(`/api/warehouse/orders/${paid.orderId}/scan`,{pickCode:`LINE-${paid.orderId}-1`,barcode:restarted.product(sku).variant.barcode},staff.token);await call(`/api/warehouse/orders/${paid.orderId}/dispatch`,{},staff.token);await call(`/api/warehouse/orders/${paid.orderId}/delivered`,{},staff.token);await call(`/api/orders/${paid.orderId}/return`,{sku,reason:'fit',conditionConfirmed:true},customer.token);
+ await call(`/api/warehouse/orders/${paid.orderId}/scan`,{pickCode:`LINE-${paid.orderId}-1`,barcode:`LINE-${paid.orderId}-1`},staff.token);await call(`/api/warehouse/orders/${paid.orderId}/dispatch`,{},staff.token);await call(`/api/warehouse/orders/${paid.orderId}/delivered`,{},staff.token);await call(`/api/orders/${paid.orderId}/return`,{sku,reason:'fit',conditionConfirmed:true},customer.token);
  const admin=await call('/api/auth/staff',{role:'admin',pin:'1234'}),superadmin=await call('/api/auth/staff',{role:'superadmin',pin:'1234'});
  const queue=await call('/api/admin/orders?status=needs-review',undefined,admin.token);
  assert.equal(queue.orders[0].id,paid.orderId);

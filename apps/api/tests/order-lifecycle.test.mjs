@@ -29,7 +29,7 @@ test('cancellation restores stock and coupon once, voids COD or refunds prepaid,
 });
 test('dispatch waits for cancellation deadline; returns use delivery timestamp and checklist; issues remain reportable',async()=>{
  const {c,v,body,advance}=setup();const {orderId}=await c.placeOrder(customer,{...body,paymentMethod:'cod'},'return-flow');
- await c.warehouseVerify(warehouse,orderId,`PICK-${orderId}-${v.sku}`,v.barcode);
+ await c.warehouseVerify(warehouse,orderId,`PICK-${orderId}-${v.sku}`,`PICK-${orderId}-${v.sku}`);
  await assert.rejects(c.dispatch(warehouse,orderId),{status:409});advance(cancellationMs);
  await assert.rejects(c.cancelOrder(customer,orderId),{status:409});await c.dispatch(warehouse,orderId);
  await assert.rejects(c.requestOrderReturn(customer,orderId,{sku:v.sku,reason:'fit',conditionConfirmed:true}),{status:409});
@@ -38,7 +38,7 @@ test('dispatch waits for cancellation deadline; returns use delivery timestamp a
  advance(returnMs);await assert.rejects(c.requestOrderReturn(customer,orderId,{sku:v.sku,reason:'fit',conditionConfirmed:true}),{status:409});
  const report=await c.requestOrderReturn(customer,orderId,{sku:v.sku,reason:'damaged',note:'Arrived with a torn seam.'});assert.equal(report.issueReport.status,'requested');
  const second=await c.placeOrder(customer,{...body,paymentMethod:'card'},'second-return');
- await c.warehouseVerify(warehouse,second.orderId,`PICK-${second.orderId}-${v.sku}`,v.barcode);
+ await c.warehouseVerify(warehouse,second.orderId,`PICK-${second.orderId}-${v.sku}`,`PICK-${second.orderId}-${v.sku}`);
  advance(cancellationMs);await c.dispatch(warehouse,second.orderId);await c.markDelivered(warehouse,second.orderId);advance(returnMs-1);
  const returned=await c.requestOrderReturn(customer,second.orderId,{sku:v.sku,reason:'fit',conditionConfirmed:true});assert.equal(returned.returnRequests[0].status,'requested');
  await assert.rejects(c.requestOrderReturn(customer,second.orderId,{sku:v.sku,reason:'fit',conditionConfirmed:true}),{status:409});
@@ -54,7 +54,7 @@ test('partial payment requires a distant PIN and splits the final discounted tot
  assert.equal(c.customerView(customer).profile.points,0);
  const cancelled=await c.cancelOrder(customer,orderId);assert.equal(cancelled.payment.mockRefundAmount,404.73);
  const next=await c.placeOrder(customer,pay('700001'),'split-delivery');
- await c.warehouseVerify(warehouse,next.orderId,`PICK-${next.orderId}-${v.sku}`,v.barcode);
+ await c.warehouseVerify(warehouse,next.orderId,`PICK-${next.orderId}-${v.sku}`,`PICK-${next.orderId}-${v.sku}`);
  advance(cancellationMs);await c.dispatch(warehouse,next.orderId);
  assert.equal((await c.markDelivered(warehouse,next.orderId)).payment.status,'mock_collected');
  assert.equal(c.customerView(customer).profile.points,next.order.quote.earnPoints);

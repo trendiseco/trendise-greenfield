@@ -195,23 +195,17 @@ export class Commerce {
     this.permit(session,'warehouse.fulfill');
     const order=this.orders.get(orderId);if(!order)throw new DomainError(404,'Order not found');
     if(!['paid','confirmed','picking'].includes(order.status))throw new DomainError(409,'Order is not available for picking');
-    const item=resolvePickLine(order,pickCode);
-    if(!item){
-      const code=String(pickCode||'').trim();
-      const garmentCode=order.items.some(line=>line.barcode===code);
-      throw new DomainError(400,garmentCode
-        ? 'Field 1 contains a garment barcode. Use the LINE code from this order’s pick list in field 1, then scan the garment tag in field 2.'
-        : 'Field 1 needs the LINE barcode for this order. Scan it from the order pick list.','WRONG_PICK_CODE');
-    }
+    const expected=String(pickCode||'').trim();
+    const item=resolvePickLine(order,expected);
+    if(!item)throw new DomainError(400,'Field 1 needs a valid order-line barcode from this order’s pick list.','WRONG_PICK_CODE');
     const sku=item.sku;
     const scanned=String(barcode||'').trim();
-    if(scanned!==item.barcode){
-      const otherLine=order.items.find(line=>line.barcode===scanned);
-      const expected=`${item.name} · ${item.color} / ${item.size} (${item.sku})`;
-      const hint=otherLine
-        ? ` This tag belongs to ${otherLine.name} · ${otherLine.color} / ${otherLine.size}. Select that order line first if you are packing it.`
-        : ' Check that you scanned the garment’s inventory tag.';
-      throw new DomainError(409,`Field 2: expected barcode ${item.barcode} for ${expected}.${hint}`,'WRONG_BARCODE');
+    if(scanned!==expected){
+      const otherLine=resolvePickLine(order,scanned);
+      const hint=otherLine&&otherLine!==item
+        ? ` The scanned code belongs to ${otherLine.name} · ${otherLine.color} / ${otherLine.size}.`
+        : ' Scan the matching order-line code from the physical label.';
+      throw new DomainError(409,`Field 2: expected ${expected} for ${item.name} · ${item.color} / ${item.size} (${sku}).${hint}`,'WRONG_BARCODE');
     }
     const count=order.verified[sku]||0;if(count>=item.qty)throw new DomainError(409,'All units on this order line already verified');
     order.verified[sku]=count+1;order.status='picking';

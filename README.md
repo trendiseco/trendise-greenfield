@@ -49,7 +49,7 @@ Website coupons and Super Admin’s automatic POS promotions are configured sepa
 1. Sign in as Admin, create a product, add variants with unique barcodes and attach a small local mock photo. Save, inspect preview and submit. A missing barcode fails validation.
 2. Confirm the new draft does not appear in `/shop`. Sign out; sign in as Super Admin, inspect the pending product and publish. It now appears in `/shop`.
 3. Receive mock stock for the new SKU at warehouse/store using Super Admin inventory controls. POS sales and online reservations now share those balances. A transfer cannot move reserved units.
-4. Place a mock website order using the current T&C, confirm mock payment, then open warehouse. Print pick list and scan matching order line and garment barcode before mock dispatch.
+4. Place a mock website order using the current T&C, confirm mock payment, then open warehouse. Print pick list and scan the order-line barcode from the pick list and the same barcode from the physical order label before mock dispatch.
 5. Restart the API. Catalog, staff, stock, reservations, orders and sale idempotency survive. Browser session tokens also remain valid until access is revoked.
 
 ## Store POS

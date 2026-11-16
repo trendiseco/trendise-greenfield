@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {Commerce} from '../src/core.mjs';
 import {warehousePickCode} from '../../../shared/warehouse-pick.mjs';
 
-test('warehouse immediately sees placed orders and verifies compact pick codes against physical label values',async()=>{
+test('warehouse immediately sees placed orders and verifies the same order-line barcode on the pick list and physical label',async()=>{
  const c=new Commerce(),customer={role:'customer',phone:'9876543210'},warehouse={role:'warehouse'};
  const v=c.products[0].variants[0],other=c.products[0].variants[1];
  const body={items:[{sku:v.sku,qty:2},{sku:other.sku,qty:1}],paymentMethod:'cod',acceptedPolicyVersion:c.version,address:{name:'Test Shopper',phone:customer.phone,line1:'Demo road',city:'Hyderabad',state:'Telangana',pincode:'500001'}};
@@ -12,12 +12,16 @@ test('warehouse immediately sees placed orders and verifies compact pick codes a
  assert.throws(()=>c.warehouseQueue(customer),{status:403});
  assert.throws(()=>c.warehouseOrder({role:'pos'},orderId),{status:403});
  const detail=c.warehouseOrder(warehouse,orderId);assert.equal(detail.items[0].barcode,v.barcode);assert.equal(detail.items[0].color,v.color);assert.ok(detail.allocations[0].locationName);
- await assert.rejects(c.warehouseVerify(warehouse,orderId,warehousePickCode('TRD-99999',0),v.barcode),{code:'WRONG_PICK_CODE'});
- await assert.rejects(c.warehouseVerify(warehouse,orderId,warehousePickCode(orderId,0),other.barcode),{code:'WRONG_BARCODE'});
- const first=await c.warehouseVerify(warehouse,orderId,warehousePickCode(orderId,0),v.barcode);assert.equal(first.scanned,1);
- await c.warehouseVerify(warehouse,orderId,warehousePickCode(orderId,0),v.barcode);
- await assert.rejects(c.warehouseVerify(warehouse,orderId,warehousePickCode(orderId,0),v.barcode),{status:409});
- assert.equal((await c.warehouseVerify(warehouse,orderId,warehousePickCode(orderId,1),other.barcode)).complete,true);
+ const firstCode=warehousePickCode(orderId,0),secondCode=warehousePickCode(orderId,1);
+ const foreignCode=warehousePickCode('TRD-99999',0);
+ await assert.rejects(c.warehouseVerify(warehouse,orderId,foreignCode,foreignCode),{code:'WRONG_PICK_CODE'});
+ await assert.rejects(c.warehouseVerify(warehouse,orderId,firstCode,secondCode),{code:'WRONG_BARCODE'});
+ await assert.rejects(c.warehouseVerify(warehouse,orderId,firstCode,v.barcode),{code:'WRONG_BARCODE'});
+ assert.deepEqual(c.warehouseOrder(warehouse,orderId).verified,{});
+ const first=await c.warehouseVerify(warehouse,orderId,firstCode,firstCode);assert.equal(first.scanned,1);
+ await c.warehouseVerify(warehouse,orderId,firstCode,firstCode);
+ await assert.rejects(c.warehouseVerify(warehouse,orderId,firstCode,firstCode),{status:409});
+ assert.equal((await c.warehouseVerify(warehouse,orderId,secondCode,secondCode)).complete,true);
 });
 
 test('warehouse inventory lists all published variants, location balances and active checkout holds',async()=>{
