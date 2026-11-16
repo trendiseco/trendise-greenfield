@@ -54,9 +54,10 @@ export default function Pos(){
    if(!controller.signal.aborted)setInventory(data);
   }).catch(error=>{if(!controller.signal.aborted)setError(error.message);});
   const onStorage=event=>{if(['trd_categories_updated','trd_pos_prices_updated','trd_stock_transferred'].includes(event.key))update();};
+  const timer=setInterval(()=>{if(!document.hidden)update();},15000);
   window.addEventListener('focus',update);
   window.addEventListener('storage',onStorage);
-  return ()=>{controller.abort();window.removeEventListener('focus',update);window.removeEventListener('storage',onStorage);};
+  return ()=>{clearInterval(timer);controller.abort();window.removeEventListener('focus',update);window.removeEventListener('storage',onStorage);};
  },[token]);
  const all=useMemo(()=>inventory?.products.flatMap(product=>product.variants.map(variant=>({...variant,product})))||[],[inventory]);
  const refresh=async(t=token)=>{try{setInventory(await api('/api/pos/inventory',{token:t}));}catch(error){setError(error.message);}};
@@ -73,7 +74,7 @@ export default function Pos(){
   const label=`${variant.product.name} · ${variant.color} / ${variant.size}`;
   if(!variant.available){
    setScanStatus('');
-   setError(`${label}: 0 pcs available across store and shared warehouse stock. Check inventory before billing.`);
+   setError(`${label}: 0 pcs available in central warehouse stock. Check inventory before billing.`);
    return;
   }
   if(qty>=25||qty>=variant.available){
@@ -131,7 +132,7 @@ export default function Pos(){
    {tab==='billing'&&<>
     <section className="staff-panel pos-scan-panel"><form className="scanner-row" onSubmit={scanBarcode}>
      <label>Scan garment barcode<input ref={scanner} autoFocus autoComplete="off" value={scan} disabled={busy} onChange={event=>setScan(event.target.value)} placeholder="e.g. 0012345678905"/></label><button disabled={!scan.trim()||busy}>Add to bill</button>
-    </form><p role="status">{scanStatus||'A keyboard-mode scanner adds the garment when it sends Enter. Billing checks both store and shared warehouse stock.'}</p></section>
+    </form><p role="status">{scanStatus||'A keyboard-mode scanner adds the garment when it sends Enter. Billing uses central warehouse stock.'}</p></section>
     <div className="pos-layout"><section className="staff-panel pos-products"><div className="panel-heading"><h2>Find a product</h2><button disabled={busy} onClick={()=>refresh()}>Refresh stock & prices</button></div>
      <div className="pos-search"><input aria-label="Search products" placeholder="e.g. Oxford, M or Sky Blue" value={search} onChange={event=>setSearch(event.target.value)}/></div>
      <div className="pos-product-grid">{all.filter(variant=>`${variant.product.name} ${variant.size} ${variant.color} ${variant.sku}`.toLowerCase().includes(search.toLowerCase())).slice(0,48).map(variant=><button className="pos-product" key={variant.sku} onClick={()=>add(variant)} disabled={busy||!variant.available}><StorePhoto className="pos-product-photo" product={variant.product} color={variant.color}/><span className="pos-product-info"><strong>{variant.product.name}</strong><small>{variant.color} / {variant.size}</small><b>{variant.salePrice<variant.regularPrice&&<del>{cash(variant.regularPrice)} </del>}{cash(variant.salePrice)}</b><em>{variant.available} available</em></span></button>)}</div>

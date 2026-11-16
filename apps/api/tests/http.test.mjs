@@ -25,8 +25,13 @@ test('HTTP: full mock customer -> warehouse -> POS and shared catalog stock',asy
  const verify=await send(base,`/api/warehouse/orders/${orderId}/scan`,{method:'POST',token:warehouse,body:{pickCode:`PICK-${orderId}-${sku}`,barcode:core.product(sku).variant.barcode}});assert.equal(verify.data.complete,true);
  const ship=await send(base,`/api/warehouse/orders/${orderId}/dispatch`,{method:'POST',token:warehouse,body:{}});assert.equal(ship.data.shipment.provider,'MOCK_SHIPROCKET');
  const pos=(await send(base,'/api/auth/staff',{method:'POST',body:{role:'pos',pin:'1234'}})).data.token;
+ const afterOnline=(await send(base,'/api/pos/inventory',{token:pos})).data.products[0].variants[0].available;
+ assert.equal(afterOnline,products[0].variants[0].available-1);
  const sale=await send(base,'/api/pos/sales',{method:'POST',token:pos,key:'http-pos-sale-001',body:{items:[{sku,qty:1}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'Cash'}});assert.equal(sale.status,201);
  const after=(await send(base,'/api/products')).data.products[0].variants[0].available;
- assert.equal(after,8);
+ assert.equal(after,afterOnline-1);
+ assert.equal((await send(base,'/api/products/availability')).data.available[sku],after);
+ assert.equal(core.stock[sku]['warehouse-hyd'],after);
+ assert.equal(core.stock[sku]['store-hyd-01'],4);
  const denied=await send(base,'/api/admin/summary',{token:pos});assert.equal(denied.status,403);
 });

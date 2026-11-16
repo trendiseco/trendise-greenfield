@@ -47,6 +47,10 @@ const handle=async (req,res)=>{
     }
     if(is('GET','/api/health'))return respond(res,200,core.health());
     if(is('GET','/api/products'))return respond(res,200,{products:core.listing()});
+    if(is('GET','/api/products/availability')){
+      const available=Object.fromEntries(core.listing().flatMap(p=>p.variants.map(v=>[v.sku,v.available])));
+      return respond(res,200,{available});
+    }
     if(is('GET','/api/website'))return respond(res,200,core.websitePublic());
     const media=path.match(/^\/api\/media\/([a-f0-9-]+)$/);
     if(req.method==='GET'&&media){core.ensureWebsite();const file=core.website.media[media[1]];if(!file)throw new DomainError(404,'Media not found');res.writeHead(200,{'content-type':file.mime,'x-content-type-options':'nosniff','cache-control':'public, max-age=3600'});return res.end(Buffer.from(file.data,'base64'));}

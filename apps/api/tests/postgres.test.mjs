@@ -9,13 +9,14 @@ test('PostgreSQL restart durability, two-process lock, rollback and database con
  try{
  const pool=isolated;
  await migrate(pool);await migrate(pool);await seed(pool);await seed(pool);const a=new DurableCommerce(pool),b=new DurableCommerce(pool);let sku;
- await a.unit(()=>{sku=a.products[0].variants[0].sku;a.stock[sku]['store-hyd-01']=1;});
+ await a.unit(()=>{sku=a.products[0].variants[0].sku;a.stock[sku]['warehouse-hyd']=1;});
  const key=crypto.randomUUID();const body={items:[{sku,qty:1}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'Cash',idempotencyKey:key};
  const result=await Promise.allSettled([a.unit(()=>a.completePosSale({role:'pos',locationId:'store-hyd-01'},body)),b.unit(()=>b.completePosSale({role:'pos',locationId:'store-hyd-01'},{...body,idempotencyKey:crypto.randomUUID()}))]);assert.equal(result.filter(x=>x.status==='fulfilled').length,1);
- const restarted=new DurableCommerce(pool);await restarted.unit(()=>{assert.equal(restarted.stock[sku]['store-hyd-01'],0);assert.equal(restarted.sales.size,1);});
- await assert.rejects(a.unit(()=>{a.stock[sku]['store-hyd-01']=-1;}));await b.unit(()=>assert.equal(b.stock[sku]['store-hyd-01'],0));
+ const restarted=new DurableCommerce(pool);await restarted.unit(()=>{assert.equal(restarted.stock[sku]['warehouse-hyd'],0);assert.equal(restarted.sales.size,1);});
+ await assert.rejects(a.unit(()=>{a.stock[sku]['warehouse-hyd']=-1;}));await b.unit(()=>assert.equal(b.stock[sku]['warehouse-hyd'],0));
  const first=result[0].status==='fulfilled'?a:b;const used=result[0].status==='fulfilled'?body:null;
  if(used)await first.unit(async()=>assert.equal((await first.completePosSale({role:'pos',locationId:'store-hyd-01'},used)).sale.id,'POS-00001'));
+ await a.unit(()=>{a.stock[sku]['warehouse-hyd']=1;});
  const server=createServer(restarted);server.listen(0,'127.0.0.1');await once(server,'listening');
  try{
  const base=`http://127.0.0.1:${server.address().port}`;
@@ -72,8 +73,8 @@ test('PostgreSQL restart durability, two-process lock, rollback and database con
   assert.equal(posReloaded.sales.get(posBill.id).returns[0].id,returned.return.id);
   assert.equal(posReloaded.sales.get(posBill.id).terms,terms);
   assert.equal(posReloaded.posTermsSettings({role:'superadmin'}).text,'Updated store receipt terms.');
-  assert.equal(posReloaded.stock['DB-M']['warehouse-hyd'],4);
-  assert.equal(posReloaded.stock['DB-M']['store-hyd-01'],0);
+  assert.equal(posReloaded.stock['DB-M']['warehouse-hyd'],2);
+  assert.equal(posReloaded.stock['DB-M']['store-hyd-01'],2);
   assert.equal(posReloaded.posPromotions['DB-M'].value,700);
  },{readOnly:true});
  const website=(await call('/api/admin/website',undefined,admin.token)).draft;website.hero.title='Persisted website';const savedSite=await call('/api/admin/website',website,admin.token);await call('/api/admin/website/publish',{revision:savedSite.revision},admin.token);
@@ -81,7 +82,7 @@ test('PostgreSQL restart durability, two-process lock, rollback and database con
  await call('/api/admin/rewards/customer',{phone:'9876543210',delta:100,key:'db-reward-adjustment',reason:'Mock DB verification'},admin.token);
  const media=await call('/api/admin/media',{mime:'image/png',name:'DB mock image',data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='},admin.token);const imageResponse=await fetch(base+media.url);assert.equal(imageResponse.headers.get('content-type'),'image/png');assert.ok((await imageResponse.arrayBuffer()).byteLength>20);
  const q=await call('/api/checkout/quote',{items:[{sku,qty:1}],coupon:'DBDEMO',redeemPoints:10},customer.token);assert.equal(q.pointsDiscount,10);assert.equal(q.couponDiscount,100);
- const again=new DurableCommerce(pool);await again.unit(()=>{assert.equal(again.orders.get(paid.orderId).status,'delivered');assert.equal(again.orders.get(paid.orderId).returnRequests[0].inspection.refund.reference,inspected.returnRequests[0].inspection.refund.reference);assert.equal(again.ledger.filter(event=>event.reason==='RETURN_RESTOCK'&&event.ref===paid.orderId).length,1);assert.equal(again.available('DB-M'),4);assert.equal(again.product('DB-M').product.images[0].kind,'tryon');assert.equal(again.product('DB-M').product.sizeChart.rows[0].length,72);assert.equal(again.approvals.length,1);assert.equal(again.session(admin.token).role,'admin');assert.equal(again.website.site.hero.title,'Persisted website');assert.ok(again.website.coupons.some(c=>c.code==='DBDEMO'));assert.ok(again.customer({role:'customer',phone:'9876543210'}).points>=100);});
+ const again=new DurableCommerce(pool);await again.unit(()=>{assert.equal(again.orders.get(paid.orderId).status,'delivered');assert.equal(again.orders.get(paid.orderId).returnRequests[0].inspection.refund.reference,inspected.returnRequests[0].inspection.refund.reference);assert.equal(again.ledger.filter(event=>event.reason==='RETURN_RESTOCK'&&event.ref===paid.orderId).length,1);assert.equal(again.available('DB-M'),2);assert.equal(again.product('DB-M').product.images[0].kind,'tryon');assert.equal(again.product('DB-M').product.sizeChart.rows[0].length,72);assert.equal(again.approvals.length,1);assert.equal(again.session(admin.token).role,'admin');assert.equal(again.website.site.hero.title,'Persisted website');assert.ok(again.website.coupons.some(c=>c.code==='DBDEMO'));assert.ok(again.customer({role:'customer',phone:'9876543210'}).points>=100);});
  }finally{await new Promise(resolve=>server.close(resolve));}
  }finally{await isolated.end();const cleanup=poolFor(process.env.TEST_DATABASE_URL);try{await cleanup.query(`DROP SCHEMA ${schema} CASCADE`);}finally{await cleanup.end();}}
 

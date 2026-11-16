@@ -53,15 +53,12 @@ export class Commerce {
     try { return await fn(); } finally { release(); }
   }
   product(sku) { for(const p of this.products){const v=p.variants.find(x=>x.sku===sku);if(v)return { product:p,variant:v };}throw new DomainError(404,'Product variant not found','SKU_NOT_FOUND'); }
-  available(sku,locationId=null) {
+  available(sku,locationId='warehouse-hyd') {
     const found=this.product(sku);if(found.variant.active===false)return 0;
     this.expireReservations();
-    const locs=locationId?[locationId]:this.locations.filter(x=>x.onlineEligible).map(x=>x.id);
-    return locs.reduce((total,id)=>{
-      const physical=this.stock[sku]?.[id]??0;
-      const reserved=[...this.reservations.values()].filter(r=>r.status==='active').reduce((s,r)=>s+r.allocations.filter(a=>a.sku===sku&&a.locationId===id).reduce((a,b)=>a+b.qty,0),0);
-      return total+Math.max(0,physical-reserved);
-    },0);
+    const physical=this.stock[sku]?.[locationId]??0;
+    const reserved=[...this.reservations.values()].filter(r=>r.status==='active').reduce((sum,r)=>sum+r.allocations.filter(a=>a.sku===sku&&a.locationId===locationId).reduce((qty,a)=>qty+a.qty,0),0);
+    return Math.max(0,physical-reserved);
   }
   expireReservations() {
     const now=Date.now();
@@ -99,11 +96,11 @@ export class Commerce {
     const discount=money(subtotal*(allowed[coupon]||0));
     return {items,subtotal,discount,shipping:0,total:money(subtotal-discount),currency:'INR',coupon:coupon||null,taxNote:'Illustrative tax-inclusive sample prices. GST rules not configured.'};
   }
-  allocations(lines,channel='online',locationId=null){
-    const result=[];
-    const preferred=channel==='store'?this.posStockLocations(locationId):this.locations.filter(x=>x.onlineEligible).sort((a,b)=>Number(b.type==='warehouse')-Number(a.type==='warehouse')).map(x=>x.id);
-    for(const line of lines){let remaining=line.qty;for(const id of preferred){const possible=Math.min(remaining,this.available(line.sku,id));if(possible>0){result.push({sku:line.sku,locationId:id,qty:possible});remaining-=possible;}if(!remaining)break;}if(remaining)throw new DomainError(409,`Not enough stock for ${line.sku}`,'INSUFFICIENT_STOCK');}
-    return result;
+  allocations(lines){
+    return lines.map(({sku,qty})=>{
+      if(qty>this.available(sku))throw new DomainError(409,`Not enough warehouse stock for ${sku}`,'INSUFFICIENT_STOCK');
+      return {sku,qty,locationId:'warehouse-hyd'};
+    });
   }
   addressCheck(address) {if(!address||typeof address!=='object'||!address.name?.trim()||!address.line1?.trim()||!address.city?.trim()||!address.state?.trim()||!/^\d{6}$/.test(String(address.pincode||'')))throw new DomainError(400,'Enter a complete delivery address and six-digit PIN code');if(!/^[6-9]\d{9}$/.test(String(address.phone||'')))throw new DomainError(400,'Enter a valid contact phone number');}
   async startCheckout(session,body) {return this.serialized(()=>this.reserveCheckout(session,body));}
@@ -168,7 +165,7 @@ export class Commerce {
     if(items.some(item=>this.hiddenCategories.includes(this.product(item.sku).product.category)))throw new DomainError(409,'Remove products in hidden categories before saving this bill.');
     const quote=this.posQuote(items);
     if(body.expectedTotal!==undefined&&quote.total!==body.expectedTotal)throw new DomainError(409,'Store prices changed. Refresh the bill before saving.');
-    const allocations=this.allocations(items,'store',location.id);
+    const allocations=this.allocations(items);
     if(!['Cash','UPI','Card'].includes(body.paymentMethod))throw new DomainError(400,'Select a mock store payment method');
     const id=`POS-${String(this.sales.size+1).padStart(5,'0')}`;
     for(const allocation of allocations)this.decrement(allocation,'MOCK_POS_SALE',id);

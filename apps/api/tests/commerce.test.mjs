@@ -5,20 +5,20 @@ const c=()=>new Commerce();
 const signin=(app,phone='9876543210')=>{app.requestOtp(phone);return app.session(app.verifyOtp(phone,'123456').token,['customer']);};
 const address={name:'Test Buyer',phone:'9876543210',line1:'12 Example Lane',city:'Hyderabad',state:'Telangana',pincode:'500001'};
 
-test('fresh demo catalogue uses unique barcodes per SKU',()=>{const app=c();assert.equal(app.products.length,8);assert.equal(app.ensureUniqueBarcodes(),true);assert.equal(app.listing()[0].variants[0].available,10);});
+test('fresh demo catalogue uses unique barcodes per SKU',()=>{const app=c();assert.equal(app.products.length,8);assert.equal(app.ensureUniqueBarcodes(),true);assert.equal(app.listing()[0].variants[0].available,6);});
 test('store sale atomically reduces customer-visible inventory',async()=>{
  const app=c(),sku=app.products[0].variants[0].sku;const before=app.available(sku);
  const session=app.session(app.staffLogin('pos','1234').token,['pos']);
  app.savePosPromotion({role:'superadmin'},{sku,type:'percent',value:10});
  const response=await app.completePosSale(session,{items:[{sku,qty:1}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'Cash',idempotencyKey:'test-pos-01'});
  assert.equal(response.sale.quote.discount,149.9);assert.equal(app.available(sku),before-1);
- assert.equal(app.stock[sku]['store-hyd-01'],3);assert.equal(app.ledger.at(-1).reason,'MOCK_POS_SALE');
+ assert.equal(app.stock[sku]['store-hyd-01'],4);assert.equal(app.stock[sku]['warehouse-hyd'],5);assert.equal(app.ledger.at(-1).reason,'MOCK_POS_SALE');
 });
 test('duplicate POS submission does not duplicate stock deduction',async()=>{
  const app=c(),sku=app.products[0].variants[0].sku,session=app.session(app.staffLogin('pos','1234').token);
  const body={items:[{sku,qty:1}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'UPI',idempotencyKey:'duplicate-pos-001'};
  const [a,b]=await Promise.all([app.completePosSale(session,body),app.completePosSale(session,body)]);
- assert.equal(a.sale.id,b.sale.id);assert.equal(app.available(sku),9);assert.equal(app.ledger.length,1);
+ assert.equal(a.sale.id,b.sale.id);assert.equal(app.available(sku),5);assert.equal(app.ledger.length,1);
 });
 test('online checkout requires accepted current T&C and complete address',async()=>{
  const app=c(),session=signin(app),sku=app.products[0].variants[0].sku;
@@ -28,10 +28,10 @@ test('online checkout requires accepted current T&C and complete address',async(
 test('mock payment converts reservation once and creates warehouse order',async()=>{
  const app=c(),session=signin(app),sku=app.products[0].variants[0].sku;
  const r=await app.startCheckout(session,{items:[{sku,qty:2}],address,acceptedPolicyVersion:app.version,coupon:'WELCOME10'});
- assert.equal(app.available(sku),8);
+ assert.equal(app.available(sku),4);
  const a=await app.confirmMockPayment(session,r.reservationId,'payment-001');
  const b=await app.confirmMockPayment(session,r.reservationId,'payment-001');
- assert.equal(a.orderId,b.orderId);assert.equal(app.orders.size,1);assert.equal(app.available(sku),8);
+ assert.equal(a.orderId,b.orderId);assert.equal(app.orders.size,1);assert.equal(app.available(sku),4);
  assert.equal(app.ledger.length,1);assert.equal(a.order.acceptedPolicyVersion,app.version);
 });
 test('warehouse rejects wrong pick code and barcode; dispatch blocked until full verification',async()=>{
@@ -53,11 +53,11 @@ test('warehouse rejects wrong pick code and barcode; dispatch blocked until full
 test('customer account cannot access POS or warehouse actions',async()=>{const app=c(),session=signin(app);await assert.rejects(()=>app.completePosSale(session,{items:[],idempotencyKey:'xabc123'}),e=>e.status===403);});
 test('cannot oversell the shared pool, even with simultaneous POS requests',async()=>{
  const app=c(),sku=app.products[0].variants[0].sku,session=app.session(app.staffLogin('pos','1234').token);
- app.stock[sku]['warehouse-hyd']=0;
+ app.stock[sku]['warehouse-hyd']=4;
  const run=key=>app.completePosSale(session,{items:[{sku,qty:3}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'Cash',idempotencyKey:key});
  const outcomes=await Promise.allSettled([run('pos-parallel-a'),run('pos-parallel-b')]);
  assert.equal(outcomes.filter(x=>x.status==='fulfilled').length,1);
- assert.equal(app.stock[sku]['store-hyd-01'],1);assert.equal(app.ledger.length,1);
+ assert.equal(app.stock[sku]['warehouse-hyd'],1);assert.equal(app.ledger.length,1);
 });
 
 test('idempotency key cannot be reused for a different financial request',async()=>{
@@ -66,10 +66,10 @@ test('idempotency key cannot be reused for a different financial request',async(
  await assert.rejects(()=>app.completePosSale(session,{items:[{sku,qty:2}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'Cash',idempotencyKey:'pos-immutable-key'}),e=>e.code==='IDEMPOTENCY_CONFLICT');
  assert.equal(app.ledger.length,1);
 });
-test('store POS cannot sell inventory already reserved online at its location',async()=>{
+test('store POS cannot sell warehouse inventory reserved online',async()=>{
  const app=c(),session=signin(app),sku=app.products[0].variants[0].sku;
- // Hold 9 pieces, allocating 6 warehouse and 3 store.
- await app.startCheckout(session,{items:[{sku,qty:9}],address,acceptedPolicyVersion:app.version});
+ // Hold 5 pieces in the central warehouse.
+ await app.startCheckout(session,{items:[{sku,qty:5}],address,acceptedPolicyVersion:app.version});
  const pos=app.session(app.staffLogin('pos','1234').token);
  await assert.rejects(()=>app.completePosSale(pos,{items:[{sku,qty:2}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'Cash',idempotencyKey:'held-online-key'}),e=>e.code==='INSUFFICIENT_STOCK');
  assert.equal(app.available(sku),1);

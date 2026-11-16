@@ -32,7 +32,7 @@ test('store billing preserves prices, GST, customer history and exact restock ac
  assert.equal(sale.quote.taxable,3523.81);
  assert.ok(sale.terms.length);
  assert.deepEqual(await app.completePosSale(cashier,body),{sale,message:'Demo sale completed. No payment collected.'});
- assert.equal(app.stock[sku]['store-hyd-01'],storeBefore-2);
+ assert.equal(app.stock[sku]['store-hyd-01'],storeBefore);
 
  const reloaded = new Commerce();
  restore(reloaded,structuredClone(snapshot(app)));
@@ -47,7 +47,7 @@ test('store billing preserves prices, GST, customer history and exact restock ac
  assert.deepEqual(await reloaded.returnPosItem(cashier,sale.id,input,'return-part-one'),first);
  const last = await reloaded.returnPosItem(cashier,sale.id,input,'return-part-two');
  assert.equal(Math.round((first.return.gst+last.return.gst)*100),12857);
- assert.equal(reloaded.stock[sku]['warehouse-hyd'],warehouseBefore+2);
+ assert.equal(reloaded.stock[sku]['warehouse-hyd'],warehouseBefore);
  await assert.rejects(reloaded.returnPosItem(cashier,sale.id,input,'return-too-many'),{status:409});
  for (const period of ['today','week','month','year']) {
   const dashboard = reloaded.posDashboard(cashier,period);

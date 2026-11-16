@@ -3,12 +3,15 @@ import {useEffect,useState} from 'react';
 import Link from 'next/link';
 import CinemaHero from '../components/CinemaHero';
 import ProductCard from '../components/ProductCard';
+import {useCatalogAvailability,withCatalogAvailability} from '../lib/useCatalogAvailability';
 import {api} from '../lib/api';
 import {coverFor} from '../lib/catalog-media';
 import {useSite,mediaUrl} from '../components/SiteProvider';
 export default function Home(){
- const {site:s,hiddenCategories=[]}=useSite(),[products,P]=useState([]),[error,E]=useState(''),[edit,S]=useState(0);
+ const {site:s,hiddenCategories=[]}=useSite(),[catalog,P]=useState([]),[error,E]=useState(''),[edit,S]=useState(0);
  useEffect(()=>{api('/api/products').then(d=>P(d.products)).catch(e=>E(e.message));},[]);
+ const available=useCatalogAvailability(catalog.length>0);
+ const products=catalog.map(product=>withCatalogAvailability(product,available));
  const story=s.edits.items[edit]||s.edits.items[0],selection=story?products.filter(p=>story.categories.includes(p.category)).slice(0,2):[];
  const heading=x=><><div className="eyebrow">{x.eyebrow}</div><h2>{x.title} <em>{x.emphasis}</em></h2></>;
  return <main className="store-home">{s.hero.visible&&<CinemaHero/>}{s.ribbon.visible&&<div className="collection-ribbon"><span>{s.ribbon.left}</span><span>{s.ribbon.middle}</span><Link href={s.ribbon.href}>{s.ribbon.link} ↘</Link></div>}

@@ -2,14 +2,17 @@
 import {useEffect,useMemo,useState,Suspense} from 'react';
 import {useSearchParams} from 'next/navigation';
 import Link from 'next/link';
+import {useCatalogAvailability,withCatalogAvailability} from '../../lib/useCatalogAvailability';
 import {api} from '../../lib/api';
 import {useSite} from '../../components/SiteProvider';
 import ProductCard from '../../components/ProductCard';
 const editCategories={Work:['Shirts','Formal Pants'],Weekend:['Cotton Pants','Polo T-Shirts','Cotton Cargo'],'After Hours':['Denim Pants','Round-Neck T-Shirts']};
 function ShopInner(){
- const {site}=useSite(),params=useSearchParams(),[products,P]=useState([]),[category,C]=useState(params.get('category')||'All'),[search,Q]=useState(params.get('search')||''),[size,Z]=useState('All'),[color,V]=useState('All'),[fit,F]=useState('All'),[maxPrice,B]=useState(''),[inStock,I]=useState(false),[sort,S]=useState('featured'),[error,E]=useState('');
+ const {site}=useSite(),params=useSearchParams(),[catalog,P]=useState([]),[category,C]=useState(params.get('category')||'All'),[search,Q]=useState(params.get('search')||''),[size,Z]=useState('All'),[color,V]=useState('All'),[fit,F]=useState('All'),[maxPrice,B]=useState(''),[inStock,I]=useState(false),[sort,S]=useState('featured'),[error,E]=useState('');
  const edit=params.get('edit')||'';const editMap=Object.fromEntries(site.edits.items.map(e=>[e.name,e.categories]));
  useEffect(()=>{api('/api/products').then(d=>P(d.products)).catch(e=>E(e.message));},[]);useEffect(()=>{C(params.get('category')||'All');Q(params.get('search')||'');},[params]);
+ const available=useCatalogAvailability(catalog.length>0);
+ const products=useMemo(()=>catalog.map(product=>withCatalogAvailability(product,available)),[catalog,available]);
  const filtered=useMemo(()=>{
  let all=products.filter(p=>(category==='All'||p.category===category)&&(!editMap[edit]||editMap[edit].includes(p.category))&&`${p.name} ${p.category} ${p.description} ${p.fabric}`.toLowerCase().includes(search.toLowerCase())&&(fit==='All'||p.fit===fit)&&p.variants.some(v=>(size==='All'||v.size===size)&&(color==='All'||v.color===color)&&(!maxPrice||v.price<=Number(maxPrice))&&(!inStock||v.available>0)));
  if(sort==='low')all=[...all].sort((a,b)=>Math.min(...a.variants.map(v=>v.price))-Math.min(...b.variants.map(v=>v.price)));if(sort==='high')all=[...all].sort((a,b)=>Math.min(...b.variants.map(v=>v.price))-Math.min(...a.variants.map(v=>v.price)));return all;

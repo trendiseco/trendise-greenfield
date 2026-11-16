@@ -49,18 +49,12 @@ export const posMethods = {
     return {regularPrice: rupees(regular), salePrice: rupees(sale)};
   },
 
-  posStockLocations(storeId) {
-    const warehouse = this.locations.find(entry => entry.id === 'warehouse-hyd' && entry.type === 'warehouse' && entry.onlineEligible);
-    return warehouse ? [storeId, warehouse.id] : [storeId];
-  },
-
   posInventory(session) {
     const location = this.posLocation(session);
-    const stockLocations = this.posStockLocations(location.id);
     const products = this.listing('store').map(product => ({
       ...product,
       variants: product.variants.filter(variant => variant.active !== false).map(variant => ({
-        ...variant, ...this.posPricing(variant), available: stockLocations.reduce((total, id) => total + this.available(variant.sku, id), 0)
+        ...variant, ...this.posPricing(variant)
       }))
     }));
     return {products, locationId: location.id, locationName: location.name, stock: this.stock};
