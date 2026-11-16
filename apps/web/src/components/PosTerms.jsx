@@ -1,4 +1,5 @@
 'use client';
+import ActionFeedback from './ActionFeedback';
 import {useEffect,useState} from 'react';
 import {api} from '../lib/api';
 
@@ -30,10 +31,9 @@ export default function PosTerms({token}) {
    <label className="cms-field cms-full">Receipt terms<textarea rows={10} required maxLength={6000} value={text} disabled={saving}
     placeholder="e.g. Keep the original receipt and product tags for returns."
     onChange={event=>{setText(event.target.value);setNotice('');}}/></label>
-   <div><button disabled={saving||!text.trim()}>{saving?'Saving…':'Save receipt terms'}</button></div>
+   <div><button disabled={saving||!text.trim()}>{saving?'Saving…':'Save receipt terms'}</button><ActionFeedback error={error} success={notice} pending={saving?'Saving receipt terms…':''}/></div>
   </form>}
   {text===null&&!error&&<p role="status">Loading receipt terms…</p>}
-  {error&&<p className="error-box" role="alert">{error}</p>}
-  {notice&&<p role="status">{notice}</p>}
+  {text===null&&<ActionFeedback error={error}/>}
  </section>;
 }

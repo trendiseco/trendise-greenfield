@@ -1,4 +1,5 @@
 'use client';
+import ActionFeedback from '../../components/ActionFeedback';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import StorePhoto from '../../components/StorePhoto';
 import PosHistory,{PosReceipt,PosSaleList} from '../../components/PosHistory';
@@ -51,8 +52,7 @@ function Dashboard({token,onReceipt}) {
   {period==='previous'&&<label>Calendar year<select value={year} onChange={event=>{setReport(null);setError('');setYear(event.target.value);}}>{years.map(value=><option key={value}>{value}</option>)}</select></label>}
   <p>India time · Weeks start on Monday.</p>
   <button disabled={creating} onClick={createExamples}>{creating?'Saving…':'Add sample bills'}</button>
-  {notice&&<p role="status">{notice}</p>}
-  {error&&<p role="alert" className="error-box">{error}</p>}
+  <ActionFeedback error={error} success={notice}/>
   {report&&<><div className="metric-row">{[['Bills',report.sales.length],['Customers',report.customers],['Gross sales',cash(report.gross)],['Mock refunds',cash(report.refunded)],['Net sales',cash(report.net)]].map(([label,value])=><div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div><PosSaleList sales={report.sales} onReceipt={onReceipt}/></>}
  </section>;
 }
@@ -61,6 +61,8 @@ export default function Pos(){
  const [token,setToken]=useState(''),[pin,setPin]=useState(''),[userId,setUserId]=useState(''),[inventory,setInventory]=useState(null);
  const [scan,setScan]=useState(''),[cart,setCart]=useState([]),[name,setName]=useState(''),[phone,setPhone]=useState('');
  const [method,setMethod]=useState('UPI'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[receipt,setReceipt]=useState(null),[search,setSearch]=useState(''),[tab,setTab]=useState('billing');
+ const [billSuccess,setBillSuccess]=useState('');
+ const [billingAction,setBillingAction]=useState('scan');
  const [scanStatus,setScanStatus]=useState('');
  const [stockRefreshError,setStockRefreshError]=useState('');
  const scanner=useRef(null),attempt=useRef(null),saving=useRef(false),inventoryRequest=useRef(0);
@@ -109,6 +111,7 @@ export default function Pos(){
  }
  function add(variant){
   if(busy)return;
+  setBillingAction('scan');setBillSuccess('');
   const existing=cart.find(line=>line.sku===variant.sku);
   const qty=existing?.qty||0;
   const label=`${variant.product.name} · ${variant.color} / ${variant.size}`;
@@ -128,7 +131,7 @@ export default function Pos(){
   setScanStatus(`Added ${variant.product.name}, ${variant.color}, ${variant.size} at ${cash(variant.salePrice)}.`);setError('');
  }
  function scanBarcode(event){
-  event.preventDefault();const code=scan.trim();
+  event.preventDefault();setBillingAction('scan');const code=scan.trim();
   const match=all.find(variant=>variant.barcode===code)||all.find(variant=>variant.sku.toUpperCase()===code.toUpperCase());
   if(match){add(match);setScan('');}
   else{
@@ -151,28 +154,29 @@ export default function Pos(){
   event.preventDefault();if(saving.current||!cart.length)return;
   const body=JSON.stringify({items:cart.map(({sku,qty})=>({sku,qty})),customer:{name,phone},paymentMethod:method,expectedTotal:total/100});
   if(attempt.current?.body!==body)attempt.current={body,key:uniqueKey()};
-  saving.current=true;setBusy(true);setError('');
+  saving.current=true;setBillingAction('save');setBillSuccess('');setBusy(true);setError('');
   try{
    const result=await api('/api/pos/sales',{method:'POST',token,headers:{'x-idempotency-key':attempt.current.key},body});
-   setReceipt(result.sale);window.scrollTo(0,0);setCart([]);setName('');setPhone('');setScanStatus('');attempt.current=null;await refresh();
+   setBillSuccess(`Bill ${result.sale.id} saved.`);setReceipt(result.sale);window.scrollTo(0,0);setCart([]);setName('');setPhone('');setScanStatus('');attempt.current=null;await refresh();
   }catch(error){setError(error.message);if(error.status===409)await refresh();}
   finally{saving.current=false;setBusy(false);}
  }
  function openReceipt(sale){setReceipt(sale);window.scrollTo(0,0);}
- function logout(){inventoryRequest.current++;setStockRefreshError('');sessionStorage.removeItem('trd_pos_token');setToken('');setCart([]);setReceipt(null);setName('');setPhone('');setUserId('');setPin('');setScan('');setSearch('');setInventory(null);setError('');setScanStatus('');setTab('billing');attempt.current=null;}
+ function logout(){setBillSuccess('');inventoryRequest.current++;setStockRefreshError('');sessionStorage.removeItem('trd_pos_token');setToken('');setCart([]);setReceipt(null);setName('');setPhone('');setUserId('');setPin('');setScan('');setSearch('');setInventory(null);setError('');setScanStatus('');setTab('billing');attempt.current=null;}
  if(!token)return <main className="container staff-login-page"><form className="staff-login-card" onSubmit={login}><div className="eyebrow">TRENDISE / STORE OPERATIONS</div><h1>Store <em>POS.</em></h1><label>Staff ID<input value={userId} onChange={event=>setUserId(event.target.value)} placeholder="e.g. pos"/></label><label>Demo staff PIN<input required value={pin} onChange={event=>setPin(event.target.value)} placeholder="e.g. 1234" type="password"/></label><button disabled={busy} className="button button-dark full">Sign in to register</button>{error&&<p className="error-box" role="alert">{error}</p>}</form></main>;
  return <main className="staff-shell pos-workspace">
   {receipt&&<PosReceipt sale={receipt} onClose={()=>{setReceipt(null);scanner.current?.focus();}}/>}
   <div className="pos-print-hide">
    <div className="staff-page-header"><div><div className="eyebrow">{inventory?.locationName||'STORE'}</div><h1>Point of <em>sale.</em></h1><p>Development register · payments and refunds are simulated.</p></div><button disabled={busy} className="small-outline" onClick={logout}>Sign out</button></div>
    <nav aria-label="Store POS" className="cms-tabs">{Object.entries({billing:'Billing',dashboard:'Dashboard',customers:'Customer search & returns'}).map(([key,label])=><button disabled={busy} key={key} aria-pressed={tab===key} onClick={()=>{setError('');setTab(key);}}>{label}</button>)}</nav>
-   {error&&<p role="alert" className="error-box">{error}</p>}
+
    {tab==='dashboard'&&<Dashboard token={token} onReceipt={openReceipt}/>}
    {tab==='customers'&&<PosHistory token={token} onReceipt={openReceipt} onInventoryChanged={()=>{setReceipt(null);refresh();}}/>}
    {tab==='billing'&&<>
     <section className="staff-panel pos-scan-panel"><form className="scanner-row" onSubmit={scanBarcode}>
-     <label>Scan garment barcode<input ref={scanner} autoFocus autoComplete="off" value={scan} disabled={busy} onChange={event=>setScan(event.target.value)} placeholder="e.g. 0012345678905"/></label><button disabled={!scan.trim()||busy}>Add to bill</button>
-    </form>{stockRefreshError&&<p role="alert" className="error-box">Stock refresh failed. {stockRefreshError}</p>}<p role="status">{scanStatus||'A keyboard-mode scanner adds the garment when it sends Enter. Central stock and prices refresh automatically.'}</p></section>
+     <label>Scan garment barcode<input ref={scanner} autoFocus autoComplete="off" value={scan} disabled={busy} onChange={event=>setScan(event.target.value)} placeholder="e.g. 0012345678905"/></label><div className="scanner-submit"><button disabled={!scan.trim()||busy}>Add to bill</button>
+     <ActionFeedback error={billingAction==='scan'?error:''} success={scanStatus}/></div>
+    </form><ActionFeedback error={stockRefreshError&&'Stock refresh failed. '+stockRefreshError}/><p className="hint">Stock and prices refresh automatically.</p></section>
     <div className="pos-layout"><aside className="staff-panel pos-register">
      <div className="panel-heading"><h2>Current bill</h2><span>{cart.reduce((sum,item)=>sum+item.qty,0)} items</span></div>
      <div className="pos-bill-lines">{lines.map(({sku,qty,variant})=><div className="pos-bill-row" key={sku}><div className="pos-bill-item"><StorePhoto className="pos-bill-photo" product={variant.product} color={variant.color}/><div><strong>{variant.product.name}</strong><small>{variant.color} / {variant.size} · {sku}</small><div className="qty-control"><button aria-label={`Remove one ${sku}`} disabled={busy} onClick={()=>changeQty(sku,-1)}>−</button><span>{qty}</span><button aria-label={`Add one ${sku}`} disabled={busy} onClick={()=>changeQty(sku,1)}>+</button></div></div></div><b>{cash(qty*variant.salePrice)}</b></div>)}</div>
@@ -185,6 +189,7 @@ export default function Pos(){
       <div className="summary-row"><span>Included GST (5%)</span><strong>{cash(gst/100)}</strong></div>
       <div className="pos-grand"><span>Total</span><strong>{cash(total/100)}</strong></div>
       <button className="button button-dark full" disabled={busy||!cart.length}>{busy?'Saving…':'Save bill'}</button>
+      {billingAction==='save'&&<ActionFeedback error={error} success={billSuccess} pending={busy?'Saving bill…':''}/>}
      </form>
     </aside>
     <section className="staff-panel pos-products"><div className="panel-heading"><h2>Find a product</h2><button disabled={busy} onClick={()=>refresh()}>Refresh stock & prices</button></div>

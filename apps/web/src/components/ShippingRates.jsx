@@ -1,4 +1,5 @@
 'use client';
+import ActionFeedback from './ActionFeedback';
 import {useState} from 'react';
 import {api,cash} from '../lib/api';
 
@@ -23,8 +24,8 @@ export default function ShippingRates({token}){
    <label>Package weight (kg) <small>Example: 0.85 kg for a packed parcel</small><input name="weightKg" type="number" min="0.01" max="30" step="0.01" defaultValue="0.5" required/></label>
    <label>Payment type<select name="payment"><option value="cod">Cash on delivery</option><option value="prepaid">Prepaid</option></select></label>
    <button className="button button-dark" disabled={busy}>{busy?'Checking…':'Check courier rates'}</button>
+   <ActionFeedback error={error} success={result?'Courier lookup completed.':''} pending={busy?'Checking courier rates…':''}/>
   </form>
-  {error&&<p role="alert" className="error-box">{error}</p>}
   {result&&<div aria-live="polite">
    <p>{result.environment==='production'?'Production rate lookup':'Sandbox rate lookup'}</p>
    <p>Pickup {result.pickupPin} → Delivery {result.deliveryPin} · {result.weightKg} kg</p>

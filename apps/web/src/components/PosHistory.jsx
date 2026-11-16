@@ -1,4 +1,5 @@
 'use client';
+import ActionFeedback from './ActionFeedback';
 import {useRef,useState} from 'react';
 import {api,cash,uniqueKey} from '../lib/api';
 import '../app/pos/register.css';
@@ -52,7 +53,7 @@ function PosReturn({sale,token,onReturned}) {
   <label>Return reason<input name="reason" required maxLength={240} placeholder="e.g. Wrong size"/></label>
   <label><input name="sellable" type="checkbox" required/> Tags and condition checked. Item is sellable and ready for warehouse restock.</label>
   <button disabled={busy}>{busy?"Saving return…":"Accept return & restock"}</button>
-  {error&&<p role="alert" className="error-box">{error}</p>}{notice&&<p role="status">{notice}</p>}
+  <ActionFeedback error={error} success={notice} pending={busy?'Saving return…':''}/>
  </form>;
 }
 
@@ -99,7 +100,7 @@ export default function PosHistory({token,onReceipt,onInventoryChanged,showChann
     {showChannels&&<button type="button" disabled={busy} onClick={()=>{setPhone('9999900001');loadHistory('9999900001');}}>Search sample customer</button>}
    </div>
   </form>
-  {error&&<p role="alert" className="error-box">{error}</p>}
+  <ActionFeedback error={error}/>
   {result&&<>
    <h3>{result.name||'Customer'} · {result.phone}</h3>
    {(!showChannels||channel==='sales')&&<><h4>Store purchases</h4>

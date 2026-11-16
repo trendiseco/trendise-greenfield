@@ -196,9 +196,15 @@ export class Commerce {
     const order=this.orders.get(orderId);if(!order)throw new DomainError(404,'Order not found');
     if(!['paid','confirmed','picking'].includes(order.status))throw new DomainError(409,'Order is not available for picking');
     const item=resolvePickLine(order,pickCode);
-    if(!item)throw new DomainError(400,'Scan the correct order-line barcode first','WRONG_PICK_CODE');
+    if(!item){
+      const code=String(pickCode||'').trim();
+      const garmentCode=order.items.some(line=>line.barcode===code);
+      throw new DomainError(400,garmentCode
+        ? 'Field 1 contains a garment barcode. Use the LINE code from this order’s pick list in field 1, then scan the garment tag in field 2.'
+        : 'Field 1 needs the LINE barcode for this order. Scan it from the order pick list.','WRONG_PICK_CODE');
+    }
     const sku=item.sku;
-    if(String(barcode||'').trim()!==item.barcode)throw new DomainError(409,'Wrong garment barcode: cannot pack','WRONG_BARCODE');
+    if(String(barcode||'').trim()!==item.barcode)throw new DomainError(409,'Field 2: the scanned garment barcode does not match the selected order line.','WRONG_BARCODE');
     const count=order.verified[sku]||0;if(count>=item.qty)throw new DomainError(409,'All units on this order line already verified');
     order.verified[sku]=count+1;order.status='picking';
     const complete=order.items.every(i=>order.verified[i.sku]===i.qty);

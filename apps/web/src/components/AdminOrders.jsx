@@ -1,4 +1,5 @@
 'use client';
+import ActionFeedback from './ActionFeedback';
 import {useEffect,useState} from 'react';
 import {api,cash} from '../lib/api';
 import {orderCases,orderListLabels,orderStatusLabels,orderRequestStatus} from '../../../../shared/admin-orders.mjs';
@@ -30,8 +31,9 @@ export default function AdminOrders({token,filter,onFilter,onReviewed}){
   },15000);
   return()=>{controller.abort();clearInterval(timer);};
  },[selected,token,detail?.shiprocketOrder?.orderId]);
+ const [decisionKey,setDecisionKey]=useState('');
  const submit=async e=>{
-  e.preventDefault();if(busy||!detail||!review)return;B(true);DE('');N('');
+  e.preventDefault();if(busy||!detail||!review)return;setDecisionKey(review.caseKey);B(true);DE('');N('');
   try{
    const updated=await api('/api/admin/orders/'+detail.id+'/review',{token,method:'POST',body:JSON.stringify(review)});
    D(updated);V(null);N('Decision saved. The customer can see it in My Orders.');R(n=>n+1);onReviewed();
@@ -54,7 +56,7 @@ export default function AdminOrders({token,filter,onFilter,onReviewed}){
     {list.pageCount>1&&<div className="button-row"><button className="small-outline" disabled={list.page<=1} onClick={()=>P(list.page-1)}>Previous</button><span>Page {list.page} of {list.pageCount}</span><button className="small-outline" disabled={list.page>=list.pageCount} onClick={()=>P(list.page+1)}>Next</button></div>}
    </>}
   </div><div className="admin-order-detail">
-   {notice&&<p className="notice-box" role="status">{notice}</p>}{detailError&&<p className="error-box" role="alert">{detailError}</p>}
+   {!review&&<ActionFeedback error={detailError}/>}
    {!selected?<p>Select an order to view its details.</p>:!detail?!detailError&&<p role="status">Loading order…</p>:<>
     <h3>{detail.id} · {orderStatusLabels[detail.status]||detail.status}</h3>
     <p><strong>{detail.address.name}</strong> · {detail.address.phone}</p>
@@ -81,7 +83,8 @@ export default function AdminOrders({token,filter,onFilter,onReviewed}){
       <label>Reason shown to customer<textarea required minLength={5} placeholder="e.g. Approved for inspection because the item arrived damaged." maxLength={500} value={review.note} onChange={e=>V({...review,note:e.target.value})}/></label>
       <p className="hint">A decision does not book a pickup, issue a refund, or restore stock.</p>
       <div className="button-row"><button className="button button-dark" disabled={busy||review.note.trim().length<5}>{busy?'Saving…':'Save decision'}</button><button className="small-outline" type="button" disabled={busy} onClick={()=>V(null)}>Back</button></div>
-     </form>}
+      <ActionFeedback error={detailError} pending={busy?'Saving decision…':''}/>
+     </form>}{decisionKey===key&&!review&&<ActionFeedback success={notice}/>}
     </article>)}
    </>}
   </div></div>

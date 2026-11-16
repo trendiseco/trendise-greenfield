@@ -1,4 +1,5 @@
 'use client';
+import ActionFeedback from '../../components/ActionFeedback';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {api,cash} from '../../lib/api';
 import {orderCases,orderRequestStatus} from '../../../../../shared/admin-orders.mjs';
@@ -53,7 +54,9 @@ export default function Warehouse(){
   api('/api/warehouse/orders/'+selected,{token,signal:controller.signal}).then(value=>{if(!controller.signal.aborted)D(value);}).catch(e=>{if(!controller.signal.aborted){if(e.status===401)expireSession();else E(e.message);}});
   return()=>controller.abort();
  },[selected,selectedStatus,trackingRevision,token,reload,expireSession]);
- const run=async task=>{if(inFlight.current)return;inFlight.current=true;B(true);E('');M('');try{await task();}catch(e){if(token&&e.status===401)expireSession();else E(e.message);}finally{B(false);inFlight.current=false;}};
+ const [feedbackAt,setFeedbackAt]=useState('');
+ const feedback=key=>feedbackAt===key&&<ActionFeedback error={error} success={message} pending={busy?'Saving…':''}/>;
+ const run=async(task,key='')=>{if(inFlight.current)return;inFlight.current=true;setFeedbackAt(key);B(true);E('');M('');try{await task();}catch(e){if(token&&e.status===401)expireSession();else E(e.message);}finally{B(false);inFlight.current=false;}};
  const login=()=>run(async()=>{const r=await api('/api/auth/staff',{method:'POST',body:JSON.stringify({role:'warehouse',pin})});sessionStorage.setItem('trd_warehouse_token',r.token);T(r.token);P('');});
  const action=(name,body)=>api('/api/warehouse/orders/'+order.id+'/'+name,{token,method:'POST',body:JSON.stringify(body)});
  const scan=e=>{
@@ -65,10 +68,10 @@ export default function Warehouse(){
    M(`${result.sku}: ${result.scanned}/${result.required} matched. ${result.complete?'All ordered units verified.':'Scan both barcodes for the next unit.'}`);
    R(n=>n+1);
    requestAnimationFrame(()=>pickInput.current?.focus());
-  });
+  },'scan');
  };
- const dispatch=()=>run(async()=>{const done=await action('dispatch',{});D(previous=>({...previous,status:done.status,shipment:done.shipment}));M('Mock dispatch recorded. AWB: '+done.shipment.awb);R(n=>n+1);});
- const deliver=()=>run(async()=>{const done=await action('delivered',{});D(previous=>({...previous,status:done.status,deliveredAt:done.deliveredAt,payment:done.payment}));M('Mock delivery recorded.');R(n=>n+1);});
+ const dispatch=()=>run(async()=>{const done=await action('dispatch',{});D(previous=>({...previous,status:done.status,shipment:done.shipment}));M('Mock dispatch recorded. AWB: '+done.shipment.awb);R(n=>n+1);},'dispatch');
+ const deliver=()=>run(async()=>{const done=await action('delivered',{});D(previous=>({...previous,status:done.status,deliveredAt:done.deliveredAt,payment:done.payment}));M('Mock delivery recorded.');R(n=>n+1);},'deliver');
  if(!token)return <main className="container staff-login-page operations-login operations-warehouse"><div className="staff-login-card"><span className="panel-icon">▤</span><div className="eyebrow">TRENDISE / WAREHOUSE</div><h1>Warehouse <em>login.</em></h1><p>Verify ordered SKUs against physical garment barcodes before mock dispatch.</p><label>Demo warehouse PIN<input value={pin} type="password" placeholder="Enter 1234" onChange={e=>P(e.target.value)} onKeyDown={e=>e.key==='Enter'&&login()}/></label><button className="button button-dark full" onClick={login} disabled={busy}>Sign in ↗</button>{error&&<p className="error-box" role="alert">{error}</p>}</div></main>;
  const active=order&&pickable(order.status),verified=order?.items.every(i=>(order.verified[i.sku]||0)===i.qty),dispatchAfter=order?Date.parse(order.placedAt)+cancellationMs:0,held=Date.now()<dispatchAfter;
  return <main className="staff-shell operations-workspace operations-warehouse">
@@ -77,9 +80,9 @@ export default function Warehouse(){
   {view==='inventory'?<WarehouseInventory token={token} onSessionExpired={expireSession}/>:<div className="warehouse-layout"><section className="staff-panel warehouse-list"><div className="panel-heading"><h2>{returnsView?'Return queue':'Order queue'}</h2><span>{queue?.length??'—'} orders</span></div>
    <p className="hint">New orders appear automatically. Most recent first.</p>
    {queueError&&<p className="error-box" role="alert">{queueError}</p>}
-   {!orders&&!queueError?<p role="status">Loading orders…</p>:queue?.length===0?<p>{returnsView?'No returns yet.':'No orders yet.'}</p>:queue?.map(o=><button key={o.id} className={`warehouse-order ${selected===o.id?'active':''}`} aria-pressed={selected===o.id} disabled={busy} onClick={()=>{if(selected!==o.id)D(null);S(o.id);E('');M('');PC('');BC('');}}><span><strong>{o.id}</strong><small>{o.lineCount} lines / {o.units} units</small></span><span className="order-status">{o.status.toUpperCase()}</span></button>)}
+   {!orders&&!queueError?<p role="status">Loading orders…</p>:queue?.length===0?<p>{returnsView?'No returns yet.':'No orders yet.'}</p>:queue?.map(o=><button key={o.id} className={`warehouse-order ${selected===o.id?'active':''}`} aria-pressed={selected===o.id} disabled={busy} onClick={()=>{if(selected!==o.id)D(null);S(o.id);setFeedbackAt('');E('');M('');PC('');BC('');}}><span><strong>{o.id}</strong><small>{o.lineCount} lines / {o.units} units</small></span><span className="order-status">{o.status.toUpperCase()}</span></button>)}
   </section><section className="staff-panel warehouse-detail">
-   {error&&<p className="error-box" role="alert">{error}</p>}{message&&<p className="success-box" role="status">{message}</p>}
+   {!feedbackAt&&<ActionFeedback error={error}/>}
    {!order||(returnsView&&!queue?.some(row=>row.id===order.id))?<div className="pos-empty"><h3>{returnsView?'Select a return':selected&&!error?'Loading order…':'Select an order'}</h3><p>{returnsView?'Open a return to review approval and record receipt.':'Open the pick list to see product images, quantities and barcodes.'}</p></div>:<>
     <div className="panel-heading"><div><h2>{order.id}</h2><p className="hint">Placed {formatTime(order.placedAt)}</p>{order.deliveredAt&&<p className="hint">Delivered {formatTime(order.deliveredAt)} · Customer return deadline {formatTime(orderEligibility(order).returnUntil)}</p>}</div><span className="order-status">{order.status.toUpperCase()}</span></div>
     {returnsView&&<div className="operations-return-cases">
@@ -94,23 +97,23 @@ export default function Warehouse(){
       run(async()=>{
        D(await action('return-inspection',{sku:request.sku,decision:form.get('decision'),reason:form.get('reason')}));
        M('Return inspection and settlement recorded.');
-      });
+      },key+'-inspect');
      }}>
       <h3>Inspect received return</h3>
       <ul>{returnConditions.map(condition=><li key={condition}>{condition}</li>)}</ul>
       <label>Inspection result<select name="decision" required defaultValue=""><option value="" disabled>Choose a result</option><option value="pass">Pass · restock and record eligible mock refund</option><option value="fail">Fail · quarantine outside sellable stock</option></select></label>
       <label>Reason shown to customer<textarea name="reason" placeholder="e.g. Tags intact and no visible wear." required minLength={5} maxLength={500}/></label>
       <button className="button button-dark" disabled={busy}>Record final inspection</button>
-     </form>}
+     </form>}{feedback(key+'-inspect')}
      {kind==='return'&&request.status==='approved'&&!request.receivedAt&&<form className="stack" onSubmit={e=>{
       e.preventDefault();
       const form=new FormData(e.currentTarget);
-      run(async()=>{D(await action('return-receipt',{sku:request.sku,barcode:form.get('returnBarcode'),quantity:form.get('returnQuantity')}));M('Mock return received for inspection.');});
+      run(async()=>{D(await action('return-receipt',{sku:request.sku,barcode:form.get('returnBarcode'),quantity:form.get('returnQuantity')}));M('Mock return received for inspection.');},key+'-receive');
      }}>
       <label>Returned garment barcode<input name="returnBarcode" placeholder="Scan the barcode printed on the returned tag" required autoComplete="off"/></label>
       <label>Units received (expected {order.items.find(item=>item.sku===request.sku)?.qty})<input name="returnQuantity" placeholder="e.g. 1" type="number" min="1" required/></label>
       <button className="button button-dark" disabled={busy}>Record mock return receipt</button>
-     </form>}
+     </form>}{feedback(key+'-receive')}
     </div>)}
     </div>}
     {!returnsView&&orderCases(order).length>0&&<div className="button-row">
@@ -131,18 +134,22 @@ export default function Warehouse(){
        <dl><div><dt>Colour</dt><dd>{item.color}</dd></div><div><dt>Size</dt><dd>{item.size}</dd></div><div><dt>Quantity</dt><dd>{item.qty}</dd></div><div><dt>SKU</dt><dd>{item.sku}</dd></div><div><dt>Garment barcode</dt><dd>{item.barcode}</dd></div><div><dt>Line total</dt><dd>{cash(item.lineTotal)}</dd></div></dl>
        <p className="hint">Pick from: {order.allocations.filter(a=>a.sku===item.sku).map(a=>a.locationName+' × '+a.qty).join(' · ')||'Not recorded'}</p>
        <span className="verified-count">{order.verified[item.sku]||0} / {item.qty} matched</span>
-       <div className="warehouse-pick-label"><strong>1 · Order-line barcode</strong><PickBarcode value={warehousePickCode(order.id,index)}/><small>2 · Scan the barcode attached to the physical garment.</small></div>
+       <div className="warehouse-pick-label"><strong>1 · Order-line barcode</strong><PickBarcode value={warehousePickCode(order.id,index)}/>{active&&<button type="button" className="small-outline warehouse-use-pick-code" disabled={busy} onClick={()=>{
+        PC(warehousePickCode(order.id,index));BC('');E('');M('');
+        requestAnimationFrame(()=>garmentInput.current?.focus());
+       }}>Use this order line</button>}<small>2 · Scan the barcode attached to the physical garment.</small></div>
       </div>
      </article>)}
     </div>
-    {active&&<form className="warehouse-scanner" onSubmit={scan}><h3>Dual barcode verification</h3><p>For each unit, scan the order-line barcode first, then the barcode on the garment. Both must match.</p>
+    {active&&<form className="warehouse-scanner" onSubmit={scan}><h3>Dual barcode verification</h3><p>Use the LINE barcode from the pick list in field 1. Scan the physical tag in field 2. The system checks that the garment belongs to that order line.</p>
      <label>1 / Order-line barcode<input ref={pickInput} value={pickCode} onChange={e=>PC(e.target.value)} autoComplete="off" placeholder={warehousePickCode(order.id,0)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();if(pickCode.trim())garmentInput.current?.focus();}}}/></label>
      <label>2 / Physical garment barcode<input ref={garmentInput} value={barcode} onChange={e=>BC(e.target.value)} autoComplete="off" placeholder="Scan the garment label" disabled={!pickCode.trim()}/></label>
      <button className="button button-dark" disabled={busy||!pickCode.trim()||!barcode.trim()}>Verify barcode match ↗</button>
+     {feedback('scan')}
     </form>}
     <div className="warehouse-actions">
-     {active&&<><button className="button button-dark full" disabled={busy||held||!verified} onClick={dispatch}>Complete mock dispatch ↗</button><p className="hint">{held?`Dispatch opens ${formatTime(dispatchAfter)}, after the cancellation window.`:'All ordered units must pass both barcode checks before dispatch.'}</p></>}
-     {order.status==='shipped'&&<button className="button button-line" disabled={busy} onClick={deliver}>Mark mock delivered</button>}
+     {active&&<><button className="button button-dark full" disabled={busy||held||!verified} onClick={dispatch}>Complete mock dispatch ↗</button>{feedback('dispatch')}<p className="hint">{held?`Dispatch opens ${formatTime(dispatchAfter)}, after the cancellation window.`:'All ordered units must pass both barcode checks before dispatch.'}</p></>}
+     {order.status==='shipped'&&<button className="button button-line" disabled={busy} onClick={deliver}>Mark mock delivered</button>}{feedback('deliver')}
     </div>
     <ShipmentTracking shipment={order.shiprocketOrder} staff/>
     {order.shipment&&<p className="shipment-label">Mock AWB: {order.shipment.awb}</p>}

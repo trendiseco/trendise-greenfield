@@ -1,4 +1,5 @@
 'use client';
+import ActionFeedback from './ActionFeedback';
 import {useEffect,useState} from 'react';
 import {api,cash} from '../lib/api';
 
@@ -13,6 +14,7 @@ export default function PosPromotions({token,online=false}) {
  const updateKey=online?'trd_website_prices_updated':'trd_pos_prices_updated';
  const [variants,setVariants]=useState({}),[scope,setScope]=useState('variant'),[target,setTarget]=useState('');
  const [type,setType]=useState('none'),[value,setValue]=useState('');
+ const [action,setAction]=useState('');
  const [error,setError]=useState(''),[notice,setNotice]=useState(''),[busy,setBusy]=useState('');
  useEffect(()=>{api(endpoint+'-promotions',{token}).then(setVariants).catch(error=>setError(error.message));},[token,endpoint]);
  const entries=Object.entries(variants);
@@ -30,6 +32,7 @@ export default function PosPromotions({token,online=false}) {
  }
  function save(event) {
   event.preventDefault();
+  setAction('promotion');
   run('Saving promotion…',async()=>{
    setVariants(await api(endpoint+'-promotions',{token,method:'POST',body:JSON.stringify({sku:target,scope,target,type,value:Number(value)})}));
    localStorage.setItem(updateKey,String(Date.now()));
@@ -37,6 +40,7 @@ export default function PosPromotions({token,online=false}) {
   });
  }
  function download() {
+  setAction('download');
   run('Preparing stock workbook…',async()=>{
    const {default:Excel}=await import('exceljs/dist/exceljs.min.js');
    const book=new Excel.Workbook(),sheet=book.addWorksheet(sheetName);
@@ -57,6 +61,7 @@ export default function PosPromotions({token,online=false}) {
  function upload(event) {
   const file=event.target.files?.[0];event.target.value='';
   if(!file)return;
+  setAction('upload');
   run('Importing prices…',async()=>{
    if(file.size>5*1024*1024)throw new Error('Choose an Excel workbook under 5 MB.');
    const {default:Excel}=await import('exceljs/dist/exceljs.min.js');
@@ -76,6 +81,7 @@ export default function PosPromotions({token,online=false}) {
    setNotice(`Updated ${result.updated} ${priceColumn.toLowerCase()}s.`);
   });
  }
+ const feedback=key=>action===key&&<ActionFeedback error={error} success={notice} pending={busy}/>;
  return <section className="staff-panel"><h2>{label} promotions</h2>
   <form className="m02-grid" onSubmit={save}>
    <label>Apply to<select value={scope} onChange={event=>{setScope(event.target.value);setTarget('');setType('none');setValue('');}}>
@@ -85,13 +91,12 @@ export default function PosPromotions({token,online=false}) {
    <label>Promotion<select value={type} onChange={event=>setType(event.target.value)}><option value="none">Clear promotion</option><option value="percent">Percentage off</option><option value="fixed">Flat final price (₹)</option></select></label>
    {type!=='none'&&<label>{type==='percent'?'Discount %':'Final price (₹)'}<input required type="number" min=".01" step=".01" value={value} placeholder={type==='percent'?'e.g. 15':'e.g. 1299'} onChange={event=>setValue(event.target.value)}/></label>}
    {scope==='variant'&&target&&<p>Regular price {cash(variants[target]?.regularPrice)} · Current selling price {cash(variants[target]?.salePrice)}</p>}
-   <button disabled={busy||(!target&&scope!=='all')}>Save promotion</button>
+   <button disabled={busy||(!target&&scope!=='all')}>Save promotion</button>{feedback('promotion')}
   </form>
   <h3>Bulk pricing in Excel</h3>
   <p>{online?'Edit Website offer price and upload the workbook. The regular price clears the offer. Existing coupons apply to the offer subtotal.':'Edit the POS scan price column and upload the workbook. Changed prices become the store price and clear any promotion on those rows.'}</p>
-  <button disabled={busy||!entries.length} onClick={download}>Download stock workbook</button>
+  <button disabled={busy||!entries.length} onClick={download}>Download stock workbook</button>{feedback('download')}
   <label>Upload updated prices<input disabled={busy} type="file" accept=".xlsx" onChange={upload}/></label>
-  <p className={busy?"management-save-status":undefined} role="status">{busy}</p>
-  {error&&<p role="alert" className="error-box">{error}</p>}{notice&&<p role="status">{notice}</p>}
+  {feedback('upload')}{!action&&<ActionFeedback error={error}/>}
  </section>;
 }

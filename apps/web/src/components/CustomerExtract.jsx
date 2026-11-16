@@ -1,4 +1,5 @@
 'use client';
+import ActionFeedback from './ActionFeedback';
 import {useState} from 'react';
 import {api} from '../lib/api';
 import {customerHistoryWorkbook} from '../lib/customer-history-export.mjs';
@@ -46,9 +47,9 @@ export default function CustomerExtract({token}) {
     <button className="button button-dark" disabled={locked}>{busy?'Searching…':'Search'}</button>
     <button type="button" className="button button-dark" disabled={locked||!count} onClick={download}>{exporting?'Preparing Excel…':'Download Excel'}</button>
    </div>
+   <ActionFeedback error={error} success={result?`${count} ${label} purchases found.`:''}/>
   </form>
-  <p role="status">{result?`${count} ${label} purchases found.`:'Search a date range to enable the Excel download. Both dates are inclusive in India time.'}</p>
-  {error&&<p role="alert" className="error-box">{error}</p>}
+  {!result&&!error&&<p className="hint">Search a date range to enable the Excel download. Both dates are inclusive in India time.</p>}
   {count>0&&<section aria-label={label+' purchase results'} key={channel+from+to}>
    {channel==='sales'?<PosSaleList sales={result.sales}/>:<WebsiteOrderList orders={result.orders}/>}
   </section>}
