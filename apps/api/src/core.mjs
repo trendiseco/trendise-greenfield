@@ -320,15 +320,18 @@ export class Commerce {
     if(others.some(x=>x.slug===p.slug))throw new DomainError(409,'Product slug already used');
     if(!Array.isArray(p.variants)||!p.variants.length||p.variants.length>100)throw new DomainError(400,'Add between 1 and 100 variants');
     const barcodes=new Set(),skus=new Set();
-    p.variants=p.variants.map(v=>{
-      for(const field of ['sku','barcode','color','size'])if(typeof v[field]!=='string'||!v[field].trim())throw new DomainError(400,'Every variant requires '+field,'BARCODE_REQUIRED');
-      if(!/^[A-Z0-9-]{1,80}$/.test(v.sku)||!/^[A-Za-z0-9-]{1,80}$/.test(v.barcode))throw new DomainError(400,'SKU/barcode must be alphanumeric with optional hyphens');
-      if(barcodes.has(v.barcode)||skus.has(v.sku)||others.some(x=>x.variants.some(o=>o.barcode===v.barcode||o.sku===v.sku)))throw new DomainError(409,'SKU and barcode must be globally unique','DUPLICATE_BARCODE');
+    p.variants=p.variants.map((v,index)=>{
+      const row='Variant '+(index+1);
+      for(const field of ['sku','barcode','color','size'])if(typeof v?.[field]!=='string'||!v[field].trim())throw new DomainError(400,row+' requires '+field,'BARCODE_REQUIRED');
+      if(!/^[A-Z0-9-]{1,80}$/.test(v.sku))throw new DomainError(400,row+': SKU must use uppercase letters, numbers or hyphens (up to 80 characters)');
+      if(!/^[A-Za-z0-9-]{1,80}$/.test(v.barcode))throw new DomainError(400,row+': barcode must use letters, numbers or hyphens (up to 80 characters)');
+      if(skus.has(v.sku)||others.some(x=>x.variants.some(o=>o.sku===v.sku)))throw new DomainError(409,row+': SKU '+v.sku+' is already in use','DUPLICATE_BARCODE');
+      if(barcodes.has(v.barcode)||others.some(x=>x.variants.some(o=>o.barcode===v.barcode)))throw new DomainError(409,row+': barcode '+v.barcode+' is already in use','DUPLICATE_BARCODE');
       const existing=this.products.find(x=>x.id===id)?.variants;
       if(existing?.some(x=>x.sku===v.sku&&x.barcode!==v.barcode))throw new DomainError(409,'Published variant identities are permanent; create a new product for new variants');
-      if(typeof v.price!=='number'||!Number.isFinite(v.price)||v.price<=0||v.price>1000000)throw new DomainError(400,'Variant price must be positive');
+      if(typeof v.price!=='number'||!Number.isFinite(v.price)||v.price<=0||v.price>1000000)throw new DomainError(400,row+': website price must be greater than zero and at most ₹10,00,000');
       const posPrice=v.posPrice===undefined?existing?.find(x=>x.sku===v.sku)?.posPrice:v.posPrice;
-      if(posPrice!=null&&(typeof posPrice!=='number'||!Number.isFinite(posPrice)||posPrice<0.01||posPrice>1000000))throw new DomainError(400,'Store POS price must be positive');
+      if(posPrice!=null&&(typeof posPrice!=='number'||!Number.isFinite(posPrice)||posPrice<0.01||posPrice>1000000))throw new DomainError(400,row+': Store POS price must be between ₹0.01 and ₹10,00,000');
       skus.add(v.sku);barcodes.add(v.barcode);return {id:v.sku,sku:v.sku,barcode:v.barcode,color:v.color,shade:v.shade||v.color,size:v.size,price:money(v.price),...(posPrice!=null?{posPrice:money(posPrice)}:{}),active:v.active!==false};
     });
     if(this.products.find(x=>x.id===id)?.variants.some(v=>!skus.has(v.sku)))throw new DomainError(409,'Published variants cannot be removed');
