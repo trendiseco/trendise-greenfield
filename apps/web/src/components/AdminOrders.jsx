@@ -5,6 +5,7 @@ import {api,cash} from '../lib/api';
 import {orderCases,orderListLabels,orderStatusLabels,orderRequestStatus} from '../../../../shared/admin-orders.mjs';
 import {paymentLabels,returnReasons,orderEligibility} from '../../../../shared/order-policy.mjs';
 import ReturnOutcome from './ReturnOutcome';
+import CancellationReturn from './CancellationReturn';
 import ShipmentTracking from './ShipmentTracking';
 import OrderCharges from './OrderCharges';
 
@@ -64,6 +65,7 @@ export default function AdminOrders({token,filter,onFilter,onReviewed}){
     <p>{paymentLabels[detail.payment.method||'card']} · {detail.payment.status.replaceAll('_',' ')} · <strong>{cash(detail.quote.total)}</strong></p>
     {detail.payment.split&&<p>{cash(detail.payment.split.upfront)} upfront · {cash(detail.payment.split.remaining)} delivery balance</p>}
     {detail.payment.mockRefundAmount!==undefined&&<p>Simulated upfront refund: {cash(detail.payment.mockRefundAmount)}</p>}
+    <CancellationReturn order={detail} staff/>
     <ShipmentTracking shipment={detail.shiprocketOrder} staff/>
     <OrderCharges quote={detail.quote}/>
     <p className="hint">Placed {date(detail.placedAt)}{detail.deliveredAt&&` · Delivered ${date(detail.deliveredAt)}`}</p>

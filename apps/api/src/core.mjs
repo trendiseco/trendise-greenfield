@@ -5,7 +5,7 @@ import {returnInspectionMethods} from './return-inspection.mjs';
 import {adminOrderMethods} from './admin-orders.mjs';
 import {splitAmounts,splitEligible} from '../../../shared/split-payment.mjs';
 import {lookupDeliveryPin} from './pin-directory.mjs';
-import {cancellationMs,orderEligibility,paymentLabels,returnReasons,policyDocument} from '../../../shared/order-policy.mjs';
+import {orderEligibility,paymentLabels,returnReasons,policyDocument} from '../../../shared/order-policy.mjs';
 import {upgradeSizeChart,validateSizeChart} from '../../../shared/size-chart.mjs';
 import {websiteState,websiteMethods} from './website.mjs';
 import { randomUUID } from 'node:crypto';
@@ -176,7 +176,7 @@ export class Commerce {
   ordersFor(session) {if(session.role==='customer')return [...this.orders.values()].filter(o=>o.phone===session.phone).map(o=>({...clone(o),...orderEligibility(o,this.orderNow())}));if(['warehouse','admin','superadmin'].includes(session.role))return [...this.orders.values()].map(clone);throw new DomainError(403,'Cannot view orders');}
   warehouseQueue(session){
     this.permit(session,'warehouse.fulfill');
-    return [...this.orders.values()].reverse().map(order=>({id:order.id,status:order.status,placedAt:order.placedAt,lineCount:order.items.length,hasReturns:Boolean(order.returnRequests?.length||order.returnRequest),trackingRevision:order.shiprocketOrder?.revision,verifiedUnits:order.items.reduce((sum,item)=>sum+Math.min(item.qty,order.verified?.[item.sku]||0),0),units:order.items.reduce((sum,item)=>sum+item.qty,0)}));
+    return [...this.orders.values()].reverse().map(order=>({id:order.id,status:order.status,placedAt:order.placedAt,lineCount:order.items.length,hasReturns:Boolean(order.returnRequests?.length||order.returnRequest||order.cancellationReturn),trackingRevision:order.shiprocketOrder?.revision,cancellationReceiptCount:order.cancellationReturn?.receipts.length,verifiedUnits:order.items.reduce((sum,item)=>sum+Math.min(item.qty,order.verified?.[item.sku]||0),0),units:order.items.reduce((sum,item)=>sum+item.qty,0)}));
   }
   warehouseOrder(session,orderId){
     this.permit(session,'warehouse.fulfill');
@@ -218,7 +218,6 @@ export class Commerce {
     const order=this.orders.get(orderId);if(!order)throw new DomainError(404,'Order not found');
     if(order.status==='shipped')return clone(order);
     if(!['paid','confirmed','picking'].includes(order.status))throw new DomainError(409,'Order is not available for dispatch');
-    if(this.orderNow()<Date.parse(order.placedAt)+cancellationMs)throw new DomainError(409,'Dispatch opens 12 hours after placement, when the cancellation window closes');
     if(!order.items.every(item=>order.verified[item.sku]===item.qty))throw new DomainError(409,'Every ordered unit must pass barcode verification');
     order.status='shipped';order.shipment={provider:'MOCK_SHIPROCKET',awb:`DEMO-AWB-${orderId}`,tracking:'Simulated dispatch, no real courier pickup',dispatchedAt:new Date().toISOString()};
     this.audit.push({type:'MOCK_DISPATCH',id:orderId,at:new Date().toISOString()});return clone(order);
@@ -230,8 +229,11 @@ export class Commerce {
   }
   async cancelOrder(session,id){return this.serialized(()=>{
     const order=this.ownOrder(session,id);if(order.status==='cancelled')return clone(order);
-    if(!orderEligibility(order,this.orderNow()).canCancel)throw new DomainError(409,'The 12-hour cancellation window has closed or the order has already shipped.');
-    for(const a of order.allocations){const before=this.stock[a.sku][a.locationId];this.stock[a.sku][a.locationId]+=a.qty;this.ledger.push({id:randomUUID(),...a,before,after:before+a.qty,delta:a.qty,reason:'ORDER_CANCELLED',ref:id,at:new Date(this.orderNow()).toISOString()});}
+    if(!orderEligibility(order,this.orderNow()).canCancel)throw new DomainError(409,'Cancellation is available within 12 hours and before delivery.');
+    if(order.status==='shipped'||order.shiprocketOrder){
+      order.cancellationReturn={status:'pending',requestedAt:new Date(this.orderNow()).toISOString(),courierFollowUp:Boolean(order.shiprocketOrder),receipts:[]};
+    }
+    for(const a of order.cancellationReturn?[]:order.allocations){const before=this.stock[a.sku][a.locationId];this.stock[a.sku][a.locationId]+=a.qty;this.ledger.push({id:randomUUID(),...a,before,after:before+a.qty,delta:a.qty,reason:'ORDER_CANCELLED',ref:id,at:new Date(this.orderNow()).toISOString()});}
     const customer=this.customer(session);
     const earned=this.website.rewardLedger.filter(e=>e.ref===id&&e.type==='EARN').reduce((n,e)=>n+e.delta,0);
     const redeemed=order.quote.redeemPoints||0;
@@ -242,6 +244,39 @@ export class Commerce {
     if(refunded!==undefined)order.payment.mockRefundAmount=refunded;
     order.payment.status=order.payment.status==='captured'||refunded>0?'mock_refunded':'void';
     this.event(session,'ORDER_CANCELLED',id);return clone(order);
+  });}
+  async receiveCancellationReturn(session,id,body){return this.serialized(()=>{
+    this.permit(session,'warehouse.fulfill');
+    const order=this.orders.get(id);
+    if(!order)throw new DomainError(404,'Order not found');
+    const pending=order.cancellationReturn;
+    if(order.status!=='cancelled'||!pending)throw new DomainError(409,'This order has no cancellation return.');
+    const item=order.items.find(line=>line.sku===body.sku);
+    const barcode=String(body.barcode??'').trim();
+    const sellable=body.sellable;
+    const reason=typeof body.reason==='string'?body.reason.trim():'';
+    if(!item||barcode!==item.barcode)throw new DomainError(400,'Scan the original inventory barcode for this order line.');
+    if(body.received!==true||!Number.isInteger(sellable)||sellable<0||sellable>item.qty||reason.length<5||reason.length>500)throw new DomainError(400,'Confirm the full line was received and inspected, enter the sellable quantity and add a reason.');
+    const prior=pending.receipts.find(receipt=>receipt.sku===item.sku);
+    if(prior){
+      if(prior.sellable!==sellable||prior.reason!==reason)throw new DomainError(409,'This order line has already been received.');
+      return this.warehouseOrder(session,id);
+    }
+    const location=this.locations.find(entry=>entry.id==='warehouse-hyd'&&entry.type==='warehouse');
+    const balances=this.stock[item.sku];
+    if(!location||!balances)throw new DomainError(409,'Warehouse stock is unavailable.');
+    const before=balances[location.id]??0;
+    const after=before+sellable;
+    if(after>2147483647)throw new DomainError(409,'Warehouse stock balance is too large.');
+    const at=new Date(this.orderNow()).toISOString();
+    if(sellable){
+      balances[location.id]=after;
+      this.ledger.push({id:randomUUID(),sku:item.sku,locationId:location.id,delta:sellable,before,after,reason:'CANCELLATION_RETURN_RESTOCK',ref:id,at});
+    }
+    pending.receipts.push({sku:item.sku,quantity:item.qty,sellable,quarantined:item.qty-sellable,reason,at,actor:session.userId||session.role});
+    if(pending.receipts.length===order.items.length)pending.status='received';
+    this.event(session,'CANCELLATION_RETURN_RECEIVED',id);
+    return this.warehouseOrder(session,id);
   });}
   async markDelivered(session,id){return this.serialized(()=>{
     this.permit(session,'warehouse.fulfill');

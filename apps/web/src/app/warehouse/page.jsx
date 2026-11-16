@@ -3,12 +3,13 @@ import ActionFeedback from '../../components/ActionFeedback';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {api,cash} from '../../lib/api';
 import {orderCases,orderRequestStatus} from '../../../../../shared/admin-orders.mjs';
-import {cancellationMs,paymentLabels,orderEligibility,returnConditions,returnReasons} from '../../../../../shared/order-policy.mjs';
+import {paymentLabels,orderEligibility,returnConditions,returnReasons} from '../../../../../shared/order-policy.mjs';
 import {resolvePickLine,warehousePickCode} from '../../../../../shared/warehouse-pick.mjs';
 import PickBarcode from '../../components/PickBarcode';
 import StorePhoto from '../../components/StorePhoto';
 import WarehouseInventory from '../../components/WarehouseInventory';
 import ReturnOutcome from '../../components/ReturnOutcome';
+import CancellationReturn from '../../components/CancellationReturn';
 import ShipmentTracking from '../../components/ShipmentTracking';
 import OrderCharges from '../../components/OrderCharges';
 import {StaffTabs,useStaffSection} from '../../components/StaffWorkspace';
@@ -47,23 +48,14 @@ export default function Warehouse(){
   return()=>{controller.abort();clearInterval(timer);document.removeEventListener('visibilitychange',onVisible);};
  },[token,reload,expireSession]);
  const selectedRow=orders?.find(row=>row.id===selected);
- const selectedStatus=selectedRow?.status,trackingRevision=selectedRow?.trackingRevision,selectedVerifiedUnits=selectedRow?.verifiedUnits;
+ const selectedStatus=selectedRow?.status,trackingRevision=selectedRow?.trackingRevision,selectedVerifiedUnits=selectedRow?.verifiedUnits,cancellationReceiptCount=selectedRow?.cancellationReceiptCount;
  useEffect(()=>{
   if(!token||!selected)return;
   const controller=new AbortController();
   api('/api/warehouse/orders/'+selected,{token,signal:controller.signal}).then(value=>{if(!controller.signal.aborted)D(value);}).catch(e=>{if(!controller.signal.aborted){if(e.status===401)expireSession();else E(e.message);}});
   return()=>controller.abort();
- },[selected,selectedStatus,trackingRevision,selectedVerifiedUnits,token,reload,expireSession]);
+ },[selected,selectedStatus,trackingRevision,selectedVerifiedUnits,cancellationReceiptCount,token,reload,expireSession]);
  const [feedbackAt,setFeedbackAt]=useState('');
- const dispatchAfter=order?Date.parse(order.placedAt)+cancellationMs:0;
- const [,refreshDispatchClock]=useState(0);
- useEffect(()=>{
-  const remaining=dispatchAfter-Date.now();
-  if(remaining<=0)return;
-  const timer=setTimeout(()=>refreshDispatchClock(n=>n+1),remaining+25);
-  return()=>clearTimeout(timer);
- },[dispatchAfter]);
-
  const feedback=key=>feedbackAt===key&&<ActionFeedback error={error} success={message} pending={busy?'Saving…':''}/>;
  const run=async(task,key='')=>{if(inFlight.current)return;inFlight.current=true;setFeedbackAt(key);B(true);E('');M('');try{await task();}catch(e){if(token&&e.status===401)expireSession();else{
   E(e.message);
@@ -94,29 +86,53 @@ export default function Warehouse(){
  const orderedUnits=order?.items.reduce((sum,item)=>sum+item.qty,0)??0;
  const verifiedUnits=order?.items.reduce((sum,item)=>sum+Math.min(item.qty,order.verified?.[item.sku]||0),0)??0;
  const verified=orderedUnits>0&&verifiedUnits===orderedUnits;
- const held=Date.now()<dispatchAfter;
- const pendingLabel=held?'Dispatch pending · cancellation hold':'Ready to dispatch';
  return <main className="staff-shell operations-workspace operations-warehouse">
   <div className="staff-page-header"><div><div className="eyebrow">WAREHOUSE / DEVELOPMENT</div><h1>Warehouse <em>operations.</em></h1><p>Pick and dispatch orders, receive returns and check shared stock.</p></div><div className="button-row"><button className="small-outline" disabled={busy} onClick={()=>R(n=>n+1)}>Refresh</button><button className="small-outline" disabled={busy} onClick={()=>{sessionStorage.removeItem('trd_warehouse_token');T('');openSection('orders');O(null);S('');D(null);PC('');BC('');M('');E('');QE('');}}>Sign out</button></div></div>
   <StaffTabs label="Warehouse sections" tabs={warehouseTabs} active={view} onChange={openSection}/>
   {view==='inventory'?<WarehouseInventory token={token} onSessionExpired={expireSession}/>:<div className="warehouse-layout"><section className="staff-panel warehouse-list"><div className="panel-heading"><h2>{returnsView?'Return queue':'Order queue'}</h2><span>{queue?.length??'—'} orders</span></div>
    <p className="hint">New orders appear automatically. Most recent first.</p>
    {queueError&&<p className="error-box" role="alert">{queueError}</p>}
-   {!orders&&!queueError?<p role="status">Loading orders…</p>:queue?.length===0?<p>{returnsView?'No returns yet.':'No orders yet.'}</p>:queue?.map(o=><button key={o.id} className={`warehouse-order ${selected===o.id?'active':''}`} aria-pressed={selected===o.id} disabled={busy} onClick={()=>{if(selected!==o.id)D(null);S(o.id);setFeedbackAt('');E('');M('');PC('');BC('');}}><span><strong>{o.id}</strong><small>{o.lineCount} lines / {o.units} units</small>{!returnsView&&pickable(o.status)&&<small>{o.verifiedUnits===o.units?(Date.now()<Date.parse(o.placedAt)+cancellationMs?'Dispatch pending':'Ready to dispatch'):`${o.verifiedUnits??0} / ${o.units} verified`}</small>}</span><span className="order-status">{o.status.toUpperCase()}</span></button>)}
+   {!orders&&!queueError?<p role="status">Loading orders…</p>:queue?.length===0?<p>{returnsView?'No returns yet.':'No orders yet.'}</p>:queue?.map(o=><button key={o.id} className={`warehouse-order ${selected===o.id?'active':''}`} aria-pressed={selected===o.id} disabled={busy} onClick={()=>{if(selected!==o.id)D(null);S(o.id);setFeedbackAt('');E('');M('');PC('');BC('');}}><span><strong>{o.id}</strong><small>{o.lineCount} lines / {o.units} units</small>{!returnsView&&pickable(o.status)&&<small>{o.verifiedUnits===o.units?'Ready to dispatch':`${o.verifiedUnits??0} / ${o.units} verified`}</small>}</span><span className="order-status">{o.status.toUpperCase()}</span></button>)}
   </section><section className="staff-panel warehouse-detail">
    {!feedbackAt&&<ActionFeedback error={error}/>}
    {!order||(returnsView&&!queue?.some(row=>row.id===order.id))?<div className="pos-empty"><h3>{returnsView?'Select a return':selected&&!error?'Loading order…':'Select an order'}</h3><p>{returnsView?'Open a return to review approval and record receipt.':'Open the pick list to see product images, quantities and barcodes.'}</p></div>:<>
     <div className="panel-heading"><div><h2>{order.id}</h2><p className="hint">Placed {formatTime(order.placedAt)}</p>{order.deliveredAt&&<p className="hint">Delivered {formatTime(order.deliveredAt)} · Customer return deadline {formatTime(orderEligibility(order).returnUntil)}</p>}</div><span className="order-status">{order.status.toUpperCase()}</span></div>
     {!returnsView&&(active||['shipped','delivered','cancelled'].includes(order.status))&&<section className="warehouse-progress" aria-label="Picking and dispatch status">
-     <h3>{active?(verified?pendingLabel:'Picking in progress'):order.status==='shipped'?'Dispatched':order.status==='delivered'?'Delivered':'Cancelled'}</h3>
+     <h3>{active?(verified?'Ready to dispatch':'Picking in progress'):order.status==='shipped'?'Dispatched':order.status==='delivered'?'Delivered':'Cancelled'}</h3>
      {active&&<>
       <p><strong>{verifiedUnits} of {orderedUnits} pieces verified</strong></p>
-      <p>{verified?(held?`All scans complete. Dispatch opens ${formatTime(dispatchAfter)} when the cancellation window closes.`:'All scans complete. This order can be dispatched now.'):'Verify each remaining piece to complete picking.'}</p>
-      <button className="button button-dark" disabled={busy||held||!verified} onClick={dispatch}>Complete mock dispatch ↗</button>
+      <p>{verified?'All scans complete. This order can be dispatched now.':'Verify each remaining piece to complete picking.'}</p>
+      <button className="button button-dark" disabled={busy||!verified} onClick={dispatch}>Complete mock dispatch ↗</button>
      </>}
      {feedback('dispatch')}
      {order.status==='shipped'&&<button className="button button-line" disabled={busy} onClick={deliver}>Mark mock delivered</button>}{feedback('deliver')}
     </section>}
+    {order.cancellationReturn&&<div className="operations-return-cases">
+     <CancellationReturn order={order} staff/>
+     {order.items.map(item=>{
+      const key='cancellation-'+item.sku;
+      const received=order.cancellationReturn.receipts.some(receipt=>receipt.sku===item.sku);
+      return <div key={key} className="notice-box">
+       {!received&&<form className="stack" onSubmit={e=>{
+        e.preventDefault();
+        const form=new FormData(e.currentTarget);
+        run(async()=>{
+         D(await action('cancellation-receipt',{sku:item.sku,barcode:form.get('barcode'),sellable:Number(form.get('sellable')),reason:form.get('reason'),received:form.get('received')==='on'}));
+         M('Receipt recorded. Sellable pieces were returned to stock.');
+         R(n=>n+1);
+        },key);
+       }}>
+        <h3>Receive cancelled shipment · {item.name} · {item.color} / {item.size}</h3>
+        <label>Inventory barcode<input name="barcode" autoComplete="off" required placeholder={item.barcode}/></label>
+        <label>Sellable pieces<input name="sellable" type="number" min="0" max={item.qty} step="1" required placeholder={String(item.qty)}/></label>
+        <label>Inspection notes<input name="reason" minLength={5} maxLength={500} required placeholder="e.g. Tags intact and no visible wear"/></label>
+        <label className="checkbox-row"><input name="received" type="checkbox" required/>All {item.qty} pieces on this line were received and inspected. Quarantine any pieces marked unsellable.</label>
+        <button className="button button-dark" disabled={busy}>Record cancellation receipt</button>
+       </form>}
+       {feedback(key)}
+      </div>;
+     })}
+    </div>}
     {returnsView&&<div className="operations-return-cases">
     {orderCases(order).filter(({kind})=>kind==='return').map(({kind,key,request})=><div key={key} className="notice-box">
      <p>{kind==='return'?'Customer return':'Delivery issue'} · {request.sku} · {returnReasons[request.reason]} · {orderRequestStatus(request)}</p>
@@ -148,8 +164,8 @@ export default function Warehouse(){
      </form>}{feedback(key+'-receive')}
     </div>)}
     </div>}
-    {!returnsView&&orderCases(order).length>0&&<div className="button-row">
-     {orderCases(order).some(({kind})=>kind==='return')&&<button className="small-outline" onClick={()=>openSection('returns')}>Open returns ↗</button>}
+    {!returnsView&&(orderCases(order).length>0||order.cancellationReturn)&&<div className="button-row">
+     {(orderCases(order).some(({kind})=>kind==='return')||order.cancellationReturn)&&<button className="small-outline" onClick={()=>openSection('returns')}>Open returns ↗</button>}
      {order.issueReport&&<p className="hint">Delivery issue · {returnReasons[order.issueReport.reason]} · {orderRequestStatus(order.issueReport)}{order.issueReport.note?' · '+order.issueReport.note:''}</p>}
     </div>}
     <div className="pick-meta warehouse-order-meta">

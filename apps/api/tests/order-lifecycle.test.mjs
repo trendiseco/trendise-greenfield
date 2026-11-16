@@ -27,11 +27,11 @@ test('cancellation restores stock and coupon once, voids COD or refunds prepaid,
  await c.cancelOrder(customer,orderId);assert.equal(c.available(v.sku),before);assert.equal(c.website.couponUses.length,0);assert.equal(c.customer(customer).points,0);
  const cod=await c.placeOrder(customer,{...body,paymentMethod:'cod'},'cancel-cod');assert.equal((await c.cancelOrder(customer,cod.orderId)).payment.status,'void');
 });
-test('dispatch waits for cancellation deadline; returns use delivery timestamp and checklist; issues remain reportable',async()=>{
+test('dispatch can happen immediately; returns use delivery timestamp and checklist',async()=>{
  const {c,v,body,advance}=setup();const {orderId}=await c.placeOrder(customer,{...body,paymentMethod:'cod'},'return-flow');
  await c.warehouseVerify(warehouse,orderId,`PICK-${orderId}-${v.sku}`,`PICK-${orderId}-${v.sku}`);
- await assert.rejects(c.dispatch(warehouse,orderId),{status:409});advance(cancellationMs);
- await assert.rejects(c.cancelOrder(customer,orderId),{status:409});await c.dispatch(warehouse,orderId);
+ await c.dispatch(warehouse,orderId);advance(cancellationMs);
+ await assert.rejects(c.cancelOrder(customer,orderId),{status:409});
  await assert.rejects(c.requestOrderReturn(customer,orderId,{sku:v.sku,reason:'fit',conditionConfirmed:true}),{status:409});
  const delivered=await c.markDelivered(warehouse,orderId);assert.equal(delivered.payment.status,'mock_collected');
  await assert.rejects(c.requestOrderReturn(customer,orderId,{sku:v.sku,reason:'fit'}),{status:400});
@@ -42,6 +42,41 @@ test('dispatch waits for cancellation deadline; returns use delivery timestamp a
  advance(cancellationMs);await c.dispatch(warehouse,second.orderId);await c.markDelivered(warehouse,second.orderId);advance(returnMs-1);
  const returned=await c.requestOrderReturn(customer,second.orderId,{sku:v.sku,reason:'fit',conditionConfirmed:true});assert.equal(returned.returnRequests[0].status,'requested');
  await assert.rejects(c.requestOrderReturn(customer,second.orderId,{sku:v.sku,reason:'fit',conditionConfirmed:true}),{status:409});
+});
+test('cancel after dispatch holds stock until inspected and restocks only sellable pieces once',async()=>{
+ const {c,v,body,advance}=setup(),before=c.available(v.sku);
+ const {orderId}=await c.placeOrder(customer,{...body,items:[{sku:v.sku,qty:2}],paymentMethod:'cod'},'cancel-after-dispatch');
+ const pickCode=`LINE-${orderId}-1`;
+ await c.warehouseVerify(warehouse,orderId,pickCode,pickCode);
+ await assert.rejects(c.dispatch(warehouse,orderId),{status:409});
+ await c.warehouseVerify(warehouse,orderId,pickCode,pickCode);
+ await c.dispatch(warehouse,orderId);
+ advance(cancellationMs-1);
+ const cancelled=await c.cancelOrder(customer,orderId);
+ assert.equal(cancelled.cancellationReturn.status,'pending');
+ assert.equal(cancelled.payment.status,'void');
+ assert.equal(c.available(v.sku),before-2);
+ assert.equal(c.warehouseQueue(warehouse)[0].hasReturns,true);
+ await assert.rejects(c.markDelivered(warehouse,orderId),{status:409});
+ const receipt={sku:v.sku,barcode:v.barcode,sellable:1,reason:'One piece has damage',received:true};
+ await assert.rejects(c.receiveCancellationReturn(customer,orderId,receipt),{status:403});
+ await assert.rejects(c.receiveCancellationReturn(warehouse,orderId,{...receipt,barcode:'WRONG'}),{status:400});
+ const returned=await c.receiveCancellationReturn(warehouse,orderId,receipt);
+ assert.equal(returned.cancellationReturn.status,'received');
+ assert.equal(returned.cancellationReturn.receipts[0].quarantined,1);
+ await c.receiveCancellationReturn(warehouse,orderId,receipt);
+ await c.cancelOrder(customer,orderId);
+ assert.equal(c.available(v.sku),before-1);
+ assert.equal(c.ledger.filter(event=>event.reason==='CANCELLATION_RETURN_RESTOCK').length,1);
+});
+
+test('cancellation of a Shiprocket-exported order requires courier follow-up before restocking',async()=>{
+ const {c,v,body}=setup(),before=c.available(v.sku);
+ const {orderId}=await c.placeOrder(customer,{...body,paymentMethod:'cod'},'cancel-exported-order');
+ c.orders.get(orderId).shiprocketOrder={orderId:123};
+ const cancelled=await c.cancelOrder(customer,orderId);
+ assert.equal(cancelled.cancellationReturn.courierFollowUp,true);
+ assert.equal(c.available(v.sku),before-1);
 });
 test('partial payment requires a distant PIN and splits the final discounted total',async()=>{
  const {c,v,body,advance}=setup();

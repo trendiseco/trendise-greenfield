@@ -13,3 +13,5 @@ Website checkout and Store POS share the Hyderabad Warehouse balance for availab
 Authorization checks role permissions for catalog edits/submissions, staff management, approval, inventory operations, POS and warehouse mutation. Super Admin has fixed full authority; custom roles cannot grant approval or staff-management authority. Existing sessions reload user activation, role and location on each request. Production authentication, MFA, expiring sessions and secure cookie deployment remain beyond M02.
 
 All external business providers remain absent: MOCK_RAZORPAY, MOCK_SHIPROCKET, MOCK_OTP, MOCK_MAP and MOCK_TRYON. Environment guards refuse production and live integration configuration. No later milestone or UAT integration is authorized by this delivery.
+
+Warehouse can dispatch after every ordered piece passes barcode verification. Undelivered orders remain eligible for customer cancellation within 12 hours of placement. A dispatched or Shiprocket-exported cancellation creates a warehouse receipt task. Warehouse inspection restores only sellable pieces. Shiprocket support or dashboard follow-up handles live courier return to origin.

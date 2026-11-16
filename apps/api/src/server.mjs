@@ -82,6 +82,8 @@ const handle=async (req,res)=>{
     if(is('POST','/api/payments/mock/confirm')){const s=core.session(tokenFrom(req),['customer']);const b=await bodyOf(req);return respond(res,200,await core.confirmMockPayment(s,String(b.reservationId||''),String(req.headers['x-idempotency-key']||b.idempotencyKey||'')));}
     const orderAction=path.match(/^\/api\/orders\/(TRD-\d+)\/(cancel|return)$/);
     if(req.method==='POST'&&orderAction){const s=core.session(tokenFrom(req),['customer']);return respond(res,200,orderAction[2]==='cancel'?await core.cancelOrder(s,orderAction[1]):await core.requestOrderReturn(s,orderAction[1],await bodyOf(req)));}
+    const cancellationReceipt=path.match(/^\/api\/warehouse\/orders\/(TRD-\d+)\/cancellation-receipt$/);
+    if(req.method==='POST'&&cancellationReceipt)return respond(res,200,await core.receiveCancellationReturn(core.session(tokenFrom(req)),cancellationReceipt[1],await bodyOf(req)));
     const receiveReturn=path.match(/^\/api\/warehouse\/orders\/(TRD-\d+)\/return-receipt$/);
     if(req.method==='POST'&&receiveReturn)return respond(res,200,await core.receiveOrderReturn(core.session(tokenFrom(req)),receiveReturn[1],await bodyOf(req)));
     const inspectReturn=path.match(/^\/api\/warehouse\/orders\/(TRD-\d+)\/return-inspection$/);

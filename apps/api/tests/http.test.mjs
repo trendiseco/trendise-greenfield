@@ -20,7 +20,6 @@ test('HTTP: full mock customer -> warehouse -> POS and shared catalog stock',asy
  const hold=await send(base,'/api/checkout/reserve',{method:'POST',token:customer,body:{items:[{sku,qty:1}],address,acceptedPolicyVersion:policy.version}});assert.equal(hold.status,201);
  const paid=await send(base,'/api/payments/mock/confirm',{method:'POST',token:customer,key:'http-mock-payment',body:{reservationId:hold.data.reservationId}});assert.equal(paid.status,200);
  const orderId=paid.data.orderId;
- core.clock=()=>new Date(Date.parse(paid.data.order.placedAt)+12*60*60*1000);
  const warehouse=(await send(base,'/api/auth/staff',{method:'POST',body:{role:'warehouse',pin:'1234'}})).data.token;
  const verify=await send(base,`/api/warehouse/orders/${orderId}/scan`,{method:'POST',token:warehouse,body:{pickCode:`PICK-${orderId}-${sku}`,barcode:`PICK-${orderId}-${sku}`}});assert.equal(verify.data.complete,true);
  const ship=await send(base,`/api/warehouse/orders/${orderId}/dispatch`,{method:'POST',token:warehouse,body:{}});assert.equal(ship.data.shipment.provider,'MOCK_SHIPROCKET');
@@ -34,4 +33,10 @@ test('HTTP: full mock customer -> warehouse -> POS and shared catalog stock',asy
  assert.equal(core.stock[sku]['warehouse-hyd'],after);
  assert.equal(core.stock[sku]['store-hyd-01'],4);
  const denied=await send(base,'/api/admin/summary',{token:pos});assert.equal(denied.status,403);
+ const cancelled=await send(base,`/api/orders/${orderId}/cancel`,{method:'POST',token:customer,body:{}});
+ assert.equal(cancelled.data.cancellationReturn.status,'pending');
+ assert.equal(core.stock[sku]['warehouse-hyd'],after);
+ const receipt=await send(base,`/api/warehouse/orders/${orderId}/cancellation-receipt`,{method:'POST',token:warehouse,body:{sku,barcode:core.product(sku).variant.barcode,sellable:1,reason:'Returned sealed',received:true}});
+ assert.equal(receipt.data.cancellationReturn.status,'received');
+ assert.equal(core.stock[sku]['warehouse-hyd'],after+1);
 });

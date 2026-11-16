@@ -23,8 +23,6 @@ test('warehouse immediately sees placed orders and verifies the same order-line 
  await assert.rejects(c.warehouseVerify(warehouse,orderId,firstCode,firstCode),{status:409});
  assert.equal((await c.warehouseVerify(warehouse,orderId,secondCode,secondCode)).complete,true);
  assert.equal(c.warehouseQueue(warehouse)[0].verifiedUnits,3);
- await assert.rejects(c.dispatch(warehouse,orderId),{status:409});
- c.clock=()=>new Date(Date.parse(detail.placedAt)+12*60*60*1000);
  assert.equal((await c.dispatch(warehouse,orderId)).status,'shipped');
 });
 

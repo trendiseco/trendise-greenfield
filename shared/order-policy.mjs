@@ -17,8 +17,8 @@ export const policySectionsV2=[
  ['Review, refunds and exchanges','Return requests are reviewed before a refund is approved. This preview does not book pickups, issue real refunds or promise exchanges. Discounts are reflected in the amount actually paid; no real payment will be collected in this preview.'],
  ['Delivery, privacy and support','Use accurate contact and delivery details. Delivery and tracking are simulated. Order details are used for this test workflow. Use My Orders to report an issue. Live seller details, privacy notices and customer care contacts must be provided before commercial launch.']
 ];
-export const policyRulesVersion=4;
-export const policyEffectiveDate='2026-11-11';
+export const policyRulesVersion=5;
+export const policyEffectiveDate='2026-11-16';
 const policySectionsV3=[
  ['Acceptance and purchase eligibility',
  'Read these terms and the applicable privacy, shipping, return and exchange information before using TRENDISE or placing an order. At checkout, actively accept the displayed version before placing any order, including Cash on Delivery. Marketing consent is separate.',
@@ -76,17 +76,20 @@ const policySectionsV3=[
  ['Support, complaints and business contact',
  'Use My Orders in the preview to report an order or delivery issue. For commercial launch, TRENDISE must publish its verified legal name, business address, customer-care details and grievance contact for order, refund and privacy concerns. These details have not been supplied for this preview.']
 ];
-export const policySections=policySectionsV3.map(section=>section[0]==='Payment, security and payment failures'
+const policySectionsV4=policySectionsV3.map(section=>section[0]==='Payment, security and payment failures'
  ? [...section,'Eligible postal areas at least 1,000 km from PIN 501505 by straight-line distance may pay 30% of the final total upfront and the remaining balance on delivery. In this preview both payments are simulated. An eligible cancellation refunds only the simulated upfront amount.']
  : section);
+export const policySections=policySectionsV4.map(section=>section[0]==='Cancellation within 12 hours'
+ ? [section[0], 'Cancel from My Orders within 12 hours of placement, while the order is undelivered. Warehouse can dispatch as soon as picking is complete. If the parcel has left, TRENDISE records the cancellation and follows up with the courier for return to origin. If it arrives, refuse delivery. Returned pieces become available after warehouse receipt and inspection. There is no cancellation fee in this preview. Prepaid refunds are simulated.']
+ : section);
 export function policyDocument(policy){
- const sections=policy.sections??(policy.rulesVersion===policyRulesVersion?policySections:policy.rulesVersion===3?policySectionsV3:policy.rulesVersion===2?policySectionsV2:[]);
+ const sections=policy.sections??(policy.rulesVersion===policyRulesVersion?policySections:policy.rulesVersion===4?policySectionsV4:policy.rulesVersion===3?policySectionsV3:policy.rulesVersion===2?policySectionsV2:[]);
  return structuredClone({...policy,sections});
 }
 export function orderEligibility(order,now=Date.now()){
  const placed=Date.parse(order.placedAt),delivered=Date.parse(order.deliveredAt);
  return {cancelUntil:Number.isFinite(placed)?new Date(placed+cancellationMs).toISOString():null,
- canCancel:['paid','confirmed','picking'].includes(order.status)&&now>=placed&&now<placed+cancellationMs,
+ canCancel:['paid','confirmed','picking','shipped'].includes(order.status)&&!order.deliveredAt&&now>=placed&&now<placed+cancellationMs,
  returnUntil:Number.isFinite(delivered)?new Date(delivered+returnMs).toISOString():null,
  canReturn:order.status==='delivered'&&now>=delivered&&now<delivered+returnMs&&order.items.some(i=>!(order.returnRequests||[order.returnRequest].filter(Boolean)).some(r=>r.sku===i.sku)),
  canReportIssue:['shipped','delivered'].includes(order.status)&&!order.issueReport};
