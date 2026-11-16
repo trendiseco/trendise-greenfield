@@ -26,3 +26,15 @@
 .warehouse-use-pick-code { margin-block: .35rem; }
 
 @media print { .warehouse-use-pick-code { display: none !important; } }
+
+.warehouse-progress {
+  margin: 0 24px 20px;
+  padding: 1rem;
+  border: 1px solid #b7c4ae;
+  border-radius: .25rem;
+  background: #edf1e8;
+}
+.warehouse-progress h3 { margin: 0 0 .45rem; }
+.warehouse-progress p { margin: .35rem 0; }
+.warehouse-progress button { margin-top: .55rem; }
+@media print { .warehouse-progress { display: none !important; } }
