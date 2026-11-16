@@ -53,7 +53,7 @@ export default function Pos(){
   const update=()=>api('/api/pos/inventory',{token,signal:controller.signal}).then(data=>{
    if(!controller.signal.aborted)setInventory(data);
   }).catch(error=>{if(!controller.signal.aborted)setError(error.message);});
-  const onStorage=event=>{if(['trd_categories_updated','trd_pos_prices_updated'].includes(event.key))update();};
+  const onStorage=event=>{if(['trd_categories_updated','trd_pos_prices_updated','trd_stock_transferred'].includes(event.key))update();};
   window.addEventListener('focus',update);
   window.addEventListener('storage',onStorage);
   return ()=>{controller.abort();window.removeEventListener('focus',update);window.removeEventListener('storage',onStorage);};
@@ -69,14 +69,35 @@ export default function Pos(){
  function add(variant){
   if(busy)return;
   const existing=cart.find(line=>line.sku===variant.sku);
-  if((existing?.qty||0)>=Math.min(25,variant.available)){setError('Store stock or bill quantity limit reached for this variant.');return;}
+  const qty=existing?.qty||0;
+  const label=`${variant.product.name} · ${variant.color} / ${variant.size}`;
+  if(!variant.available){
+   const warehouseQty=inventory?.stock?.[variant.sku]?.['warehouse-hyd']||0;
+   const stockHint=warehouseQty
+    ? `Hyderabad Warehouse has ${warehouseQty} pcs on hand. Ask Super Admin to transfer stock to this store before billing.`
+    : 'Ask Super Admin to check inventory before billing.';
+   setScanStatus('');
+   setError(`${label}: 0 pcs available at ${inventory?.locationName||'this store'}. ${stockHint}`);
+   return;
+  }
+  if(qty>=25||qty>=variant.available){
+   setScanStatus('');
+   setError(qty>=25
+    ? `${label}: limit of 25 pcs per variant on one bill reached.`
+    : `${label}: all ${variant.available} available store pcs are already on this bill.`);
+   return;
+  }
   setCart(lines=>existing?lines.map(line=>line.sku===variant.sku?{...line,qty:line.qty+1}:line):[...lines,{sku:variant.sku,qty:1,variant}]);
   setScanStatus(`Added ${variant.product.name}, ${variant.color}, ${variant.size} at ${cash(variant.salePrice)}.`);setError('');
  }
  function scanBarcode(event){
   event.preventDefault();const code=scan.trim();
   const match=all.find(variant=>variant.barcode===code)||all.find(variant=>variant.sku.toUpperCase()===code.toUpperCase());
-  if(match){add(match);setScan('');}else setError('Unknown barcode or SKU.');
+  if(match){add(match);setScan('');}
+  else{
+   setScanStatus('');
+   setError(inventory?'Barcode or SKU not found in the store catalog. Check the code and refresh stock & prices.':'Store stock is still loading. Wait for products to load, then scan again.');
+  }
   scanner.current?.focus();
  }
  function changeQty(sku,delta){
