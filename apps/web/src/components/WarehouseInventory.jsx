@@ -1,21 +1,37 @@
 'use client';
-import {useEffect,useState} from 'react';
+import ActionFeedback from './ActionFeedback';
+import {useEffect,useRef,useState} from 'react';
 import {api,cash} from '../lib/api';
 import StorePhoto from './StorePhoto';
 
-export default function WarehouseInventory({token,onSessionExpired}){
+export default function WarehouseInventory({token,onSessionExpired,onLoaded}){
  const [input,I]=useState(''),[search,S]=useState(''),[category,C]=useState('all'),[stock,K]=useState('all'),[page,P]=useState(1),[result,R]=useState(null),[loading,B]=useState(true),[error,E]=useState(''),[refresh,F]=useState(0);
+ const [notice,setNotice]=useState('');
+ const requestedRefresh=useRef(false);
+ useEffect(()=>{
+  if(!notice)return;
+  const timer=setTimeout(()=>setNotice(''),5000);
+  return()=>clearTimeout(timer);
+ },[notice]);
+ function refreshInventory(){
+  if(loading||requestedRefresh.current)return;
+  requestedRefresh.current=true;
+  setNotice('');I('');S('');C('all');K('all');P(1);F(value=>value+1);
+ }
  useEffect(()=>{
   const controller=new AbortController();B(true);E('');
   api('/api/warehouse/inventory?'+new URLSearchParams({q:search,category,stock,page:String(page)}),{token,signal:controller.signal})
-   .then(data=>{if(!controller.signal.aborted){R(data);B(false);}})
-   .catch(e=>{if(!controller.signal.aborted){if(e.status===401)onSessionExpired();else E(e.message);B(false);}});
+   .then(data=>{if(!controller.signal.aborted){R(data);B(false);
+    if(requestedRefresh.current){requestedRefresh.current=false;setNotice('Refresh successful. Inventory filters reset to defaults.');}
+    onLoaded?.();}})
+   .catch(e=>{if(!controller.signal.aborted){if(e.status===401)onSessionExpired();else E(e.message);B(false);requestedRefresh.current=false;onLoaded?.(e.message);}});
   return()=>controller.abort();
- },[token,search,category,stock,page,refresh,onSessionExpired]);
- const change=(setter,value)=>{setter(value);P(1);};
+ },[token,search,category,stock,page,refresh,onSessionExpired,onLoaded]);
+ const change=(setter,value)=>{setNotice('');setter(value);P(1);};
  return <section className="staff-panel warehouse-inventory" aria-labelledby="warehouse-inventory-title">
-  <div className="panel-heading"><div><h2 id="warehouse-inventory-title">Products &amp; inventory</h2><p className="hint">Central warehouse stock shared with the customer website and Store POS. View only; stock adjustments are managed in Admin.</p></div><button className="small-outline" disabled={loading} onClick={()=>F(n=>n+1)}>Refresh inventory</button></div>
+  <div className="panel-heading"><div><h2 id="warehouse-inventory-title">Products &amp; inventory</h2><p className="hint">Central warehouse stock shared with the customer website and Store POS. View only; stock adjustments are managed in Admin.</p></div><button className="small-outline" disabled={loading} onClick={refreshInventory}>{loading?'Refreshing…':'Refresh inventory'}</button></div>
   <div className="warehouse-inventory-content">
+   <ActionFeedback success={notice}/>
    <form className="warehouse-inventory-search" onSubmit={e=>{e.preventDefault();change(S,input.trim());}}>
     <label>Find products or scan a barcode<input type="search" value={input} onChange={e=>I(e.target.value)} maxLength={100} placeholder="e.g. Oxford or SH-OXF-SKY-M" autoComplete="off"/></label>
     <button className="button button-dark" type="submit">Search</button>

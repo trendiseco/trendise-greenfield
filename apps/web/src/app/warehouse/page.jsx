@@ -28,6 +28,20 @@ function Warehouse(){
  const {token,profile,logout}=useStaff();
  const can=permission=>profile.permissions.includes(permission);
  const [orders,O]=useState(null),[selected,S]=useState(''),[order,D]=useState(null),[pickCode,PC]=useState(''),[barcode,BC]=useState(''),[message,M]=useState(''),[error,E]=useState(''),[queueError,QE]=useState(''),[busy,B]=useState(false),[reload,R]=useState(0);
+ const [refreshing,setRefreshing]=useState(false),[refreshNotice,setRefreshNotice]=useState(''),[refreshError,setRefreshError]=useState('');
+ const manualRefresh=useRef(false);
+ const finishRefresh=useCallback((failure)=>{
+  if(!manualRefresh.current)return;
+  manualRefresh.current=false;
+  setRefreshing(false);
+  setRefreshError(failure||'');
+  setRefreshNotice(failure?'':'Refresh successful. Selections and filters reset to defaults.');
+ },[]);
+ useEffect(()=>{
+  if(!refreshNotice)return;
+  const timer=setTimeout(()=>setRefreshNotice(''),5000);
+  return()=>clearTimeout(timer);
+ },[refreshNotice]);
  const [section,openSection]=useStaffSection('orders');
  const tabs=warehouseTabs.filter(([id])=>can(id==='inventory'?'warehouse.inventory':'warehouse.read'));
  const view=tabs.some(([id])=>id===section)?section:tabs[0]?.[0];
@@ -44,15 +58,15 @@ function Warehouse(){
   let fetching=false;
   const refresh=async()=>{
    if(fetching)return;fetching=true;
-   try{const r=await api('/api/warehouse/orders',{token,signal:controller.signal});if(!controller.signal.aborted){O(r.orders);QE('');}}
-   catch(e){if(!controller.signal.aborted){if(e.status===401)expireSession();else QE(e.message);}}
+   try{const r=await api('/api/warehouse/orders',{token,signal:controller.signal});if(!controller.signal.aborted){O(r.orders);QE('');if(view!=='inventory')finishRefresh();}}
+   catch(e){if(!controller.signal.aborted){if(e.status===401)expireSession();else QE(e.message);if(view!=='inventory')finishRefresh(e.message);}}
    finally{fetching=false;}
   };
   refresh();const timer=setInterval(()=>{if(!document.hidden)refresh();},5000);
   const onVisible=()=>{if(!document.hidden)refresh();};
   document.addEventListener('visibilitychange',onVisible);
   return()=>{controller.abort();clearInterval(timer);document.removeEventListener('visibilitychange',onVisible);};
- },[token,reload,expireSession,profile.permissions.includes('warehouse.read')]);
+ },[token,reload,expireSession,finishRefresh,view,profile.permissions.includes('warehouse.read')]);
  const selectedRow=orders?.find(row=>row.id===selected);
  const selectedStatus=selectedRow?.status,trackingRevision=selectedRow?.trackingRevision,selectedVerifiedUnits=selectedRow?.verifiedUnits,cancellationReceiptCount=selectedRow?.cancellationReceiptCount;
  useEffect(()=>{
@@ -71,6 +85,13 @@ function Warehouse(){
    input?.select();
   });
  }}finally{B(false);inFlight.current=false;}};
+ const refreshPage=()=>{
+  if(inFlight.current||manualRefresh.current)return;
+  manualRefresh.current=true;
+  setRefreshing(true);setRefreshNotice('');setRefreshError('');
+  S('');D(null);PC('');BC('');M('');E('');QE('');setFeedbackAt('');
+  R(value=>value+1);
+ };
  const action=(name,body)=>api('/api/warehouse/orders/'+order.id+'/'+name,{token,method:'POST',body:JSON.stringify(body)});
  const scan=e=>{
   e.preventDefault();if(!order||!pickCode.trim()||!barcode.trim()||!pickable(order.status))return;
@@ -91,9 +112,10 @@ function Warehouse(){
  const verifiedUnits=order?.items.reduce((sum,item)=>sum+Math.min(item.qty,order.verified?.[item.sku]||0),0)??0;
  const verified=orderedUnits>0&&verifiedUnits===orderedUnits;
  return <main className="staff-shell operations-workspace operations-warehouse">
-  <div className="staff-page-header"><div><div className="eyebrow">WAREHOUSE / DEVELOPMENT</div><h1>Warehouse <em>operations.</em></h1><p>Pick and dispatch orders, receive returns and check shared stock.</p></div><div className="button-row"><button className="small-outline" disabled={busy} onClick={()=>R(n=>n+1)}>Refresh</button><button className="small-outline" disabled={busy} onClick={logout}>Sign out</button></div></div>
+  <div className="staff-page-header"><div><div className="eyebrow">WAREHOUSE / DEVELOPMENT</div><h1>Warehouse <em>operations.</em></h1><p>Pick and dispatch orders, receive returns and check shared stock.</p></div><div className="button-row"><button className="small-outline" disabled={busy||refreshing} onClick={refreshPage}>{refreshing?'Refreshing…':'Refresh'}</button><button className="small-outline" disabled={busy} onClick={logout}>Sign out</button></div></div>
+  <ActionFeedback error={refreshError} success={refreshNotice} pending={refreshing?'Refreshing warehouse data…':''}/>
   <StaffTabs label="Warehouse sections" tabs={tabs} active={view} onChange={openSection}/>
-  {view==='inventory'?<WarehouseInventory token={token} onSessionExpired={expireSession}/>:<div className="warehouse-layout"><section className="staff-panel warehouse-list"><div className="panel-heading"><h2>{returnsView?'Exchange & courier return queue':'Order queue'}</h2><span>{queue?.length??'—'} orders</span></div>
+  {view==='inventory'?<WarehouseInventory key={reload} token={token} onSessionExpired={expireSession} onLoaded={finishRefresh}/>:<div className="warehouse-layout"><section className="staff-panel warehouse-list"><div className="panel-heading"><h2>{returnsView?'Exchange & courier return queue':'Order queue'}</h2><span>{queue?.length??'—'} orders</span></div>
    <p className="hint">New orders appear automatically. Most recent first.</p>
    {queueError&&<p className="error-box" role="alert">{queueError}</p>}
    {!orders&&!queueError?<p role="status">Loading orders…</p>:queue?.length===0?<p>{returnsView?'No exchanges or courier returns yet.':'No orders yet.'}</p>:queue?.map(o=><button key={o.id} className={`warehouse-order ${selected===o.id?'active':''}`} aria-pressed={selected===o.id} disabled={busy} onClick={()=>{if(selected!==o.id)D(null);S(o.id);setFeedbackAt('');E('');M('');PC('');BC('');}}><span><strong>{o.id}</strong><small>{o.lineCount} lines / {o.units} units</small>{!returnsView&&pickable(o.status)&&<small>{o.verifiedUnits===o.units?'Ready to dispatch':`${o.verifiedUnits??0} / ${o.units} verified`}</small>}</span><span className="order-status">{o.status.toUpperCase()}</span></button>)}
