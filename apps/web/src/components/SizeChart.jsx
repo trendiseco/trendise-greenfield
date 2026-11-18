@@ -3,43 +3,31 @@ import {useId,useState} from 'react';
 import {measurementFields,convertMeasurement,isBottom} from '../../../../shared/size-chart.mjs';
 import './size-guide.css';
 
-function GarmentDiagram({category,field,back=false}){
+function GarmentDiagram({product,field,back=false}){
  const id=useId().replaceAll(':','');
- const bottom=isBottom(category),tee=category==='Round-Neck T-Shirts',polo=category==='Polo T-Shirts',short=tee||polo;
+ const bottom=isBottom(product.category),tee=product.category==='Round-Neck T-Shirts',polo=product.category==='Polo T-Shirts';
+ const short=tee||polo;
+ const linen=String(product.fabric).toLowerCase().includes('linen');
+ const panel=bottom?8+Math.max(0,['Formal Pants','Cotton Pants','Denim Pants','Cotton Cargo'].indexOf(product.category)):
+  tee?6+Number(back):polo?4+Number(back):Number(linen)*2+Number(back);
  const lines=bottom?{
-  length:[68,57,68,345],waistWidth:[109,66,251,66],hipWidth:[110,120,250,120],
-  inseam:[191,166,208,340],thighWidth:[111,176,169,176],legOpening:[109,337,163,337],
+  length:[88,26,88,345],waistWidth:[115,29,245,29],hipWidth:[112,94,248,94],
+  inseam:[184,140,206,345],thighWidth:[109,152,174,152],legOpening:[108,343,162,343],
  }:{
-  length:[138,67,138,337],chestWidth:[110,163,250,163],shoulder:[115,100,245,100],
-  sleeve:short?[248,89,295,150]:[252,90,300,316],
+  length:[143,57,143,short?322:340],chestWidth:[90,151,270,151],shoulder:[98,81,262,81],
+  sleeve:tee||polo?[265,82,318,142]:[269,84,314,316],
  };
  const line=lines[field.key];
- return <svg className="fit-garment" viewBox="0 0 360 400" role="img" aria-label={`${back?'Back':'Front'} view showing ${field.label.toLowerCase()}`}>
-  <defs>
-   <linearGradient id={id+'-fabric'} x1="0" y1="0" x2="1" y2=".4"><stop stopColor="#e6e0d4"/><stop offset=".38" stopColor="#fffdf8"/><stop offset=".7" stopColor="#eee8dd"/><stop offset="1" stopColor="#cfc7b8"/></linearGradient>
-   <filter id={id+'-shadow'} x="-30%" y="-20%" width="160%" height="160%"><feDropShadow dx="3" dy="12" stdDeviation="8" floodColor="#3b3020" floodOpacity=".15"/></filter>
-   <marker id={id+'-arrow'} viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" fill="#943f2e"/></marker>
-  </defs>
-  <ellipse cx="183" cy="361" rx="88" ry="8" fill="#302819" opacity=".05"/>
-  <g fill={`url(#${id}-fabric)`} stroke="#8e887b" strokeWidth="1.4" strokeLinejoin="round" filter={`url(#${id}-shadow)`}>
-   {bottom?<path d="M104 52H256L252 119 263 344H204L180 169 161 344H102L109 121Z"/>:
-    <path d={short?'M148 65 115 82 63 137 99 168 112 148 108 338Q180 350 252 338L248 148 262 168 298 137 245 82 212 65Q180 91 148 65Z':'M148 65 115 82 91 119 57 314 96 324 115 178 108 337Q180 351 252 337L245 178 264 324 303 314 270 119 245 82 212 65Q180 91 148 65Z'}/>}
-  </g>
-  <g fill="none" stroke="#b3ab9c" strokeWidth="1.2">
-   {bottom?<><path d="M105 74H255M180 74V146Q189 155 199 151M109 87Q140 95 133 121M251 87Q220 95 227 121M180 169 162 337M180 169 204 337M105 333H162M204 333H260"/>
-    {[120,155,202,237].map(x=><path key={x} d={`M${x} 53V73`}/>)}
-    {category==='Cotton Cargo'&&<path d="M111 188H155V235H109ZM205 188H252L254 235H211M111 198H155M206 198H252"/>}
-    {category==='Denim Pants'&&<path d="M116 84H142L138 101H115M219 84H244L245 101H222"/>}</>:
-    <><path d="M115 83Q109 129 115 178M245 83Q252 129 245 178M110 326Q180 340 250 326M124 180Q119 240 125 292M236 177Q244 249 236 293"/>
-     {back?<path d="M115 107Q180 123 245 107M180 122V146"/>:tee?<path d="M148 65Q180 108 212 65M145 67Q180 115 215 67"/>:
-      <><path d="M148 65 157 99 180 80 202 99 212 65M180 81V149M185 99V149"/>
-       {!polo&&<path d="M177 148V340M185 148V340M125 141H156V178Q140 190 125 178"/>}
-       {(polo?[116,138]:[116,148,184,220,256,292,326]).map(y=><circle key={y} cx="181" cy={y} r="2" fill="#9d9585"/>)}</>}
-     {!short&&<path d="M60 300 98 309M263 309 300 300"/>}
-    </>}
-  </g>
-  {line&&<g stroke="#943f2e" strokeWidth="2" fill="none" markerStart={`url(#${id}-arrow)`} markerEnd={`url(#${id}-arrow)`}><path d={`M${line[0]} ${line[1]}L${line[2]} ${line[3]}`} strokeDasharray="5 4"/></g>}
-  <text x="180" y="390" textAnchor="middle" fill="#625d53" fontSize="11" letterSpacing="2">{back?'BACK':'FRONT'} · LAID FLAT</text>
+ return <svg className="fit-garment" viewBox="0 0 360 400" role="img" aria-label={`${back?'Back':'Front'} garment reference showing ${field.label.toLowerCase()}`}>
+  <defs><marker id={id+'-arrow'} viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" fill="#8c3022"/></marker></defs>
+  <svg x="0" y="0" width="360" height="380" viewBox={`${panel%4*360} ${Math.floor(panel/4)*400} 360 400`} preserveAspectRatio="none">
+   <image href="/media/size-guide/garment-references.webp" width="1440" height="1200" preserveAspectRatio="none"/>
+  </svg>
+  {line&&<>
+   <path d={`M${line[0]} ${line[1]}L${line[2]} ${line[3]}`} stroke="white" strokeWidth="5" fill="none"/>
+   <path d={`M${line[0]} ${line[1]}L${line[2]} ${line[3]}`} stroke="#8c3022" strokeWidth="2" fill="none" strokeDasharray="5 4" markerStart={`url(#${id}-arrow)`} markerEnd={`url(#${id}-arrow)`}/>
+  </>}
+  <text x="180" y="394" textAnchor="middle" fill="#625d53" fontSize="11" letterSpacing="2">{back?'BACK':'FRONT'} · LAID FLAT</text>
  </svg>;
 }
 
@@ -63,8 +51,8 @@ export default function SizeChart({product,selectedSize}){
   <div className="fit-guide-layout">
    <figure className="fit-guide-stage">
     <div className="fit-guide-stage-heading"><span>{field.label}</span><strong>{value!=null?`${value} ${unit}`:'Measurement guide'}{value!=null&&<small>Size {selectedSize}</small>}</strong></div>
-    <GarmentDiagram category={product.category} field={field} back={back}/>
-    <figcaption>Illustrated measuring guide</figcaption>
+    <GarmentDiagram product={product} field={field} back={back}/>
+    <figcaption>AI-generated garment reference · measuring illustration</figcaption>
    </figure>
    <section className="fit-guide-detail" aria-label={tab==='chart'?'Garment size chart':'Measuring instructions'}>
     {tab==='chart'?<>
