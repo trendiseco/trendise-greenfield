@@ -69,7 +69,7 @@ function Pos(){
  const [scan,setScan]=useState(''),[cart,setCart]=useState([]),[name,setName]=useState(''),[phone,setPhone]=useState('');
  const [method,setMethod]=useState('UPI'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[receipt,setReceipt]=useState(null),[search,setSearch]=useState(''),[tab,setTab]=useState('billing');
  const allowedTabs=[
-  ['billing','Billing','pos.read'],['dashboard','Dashboard','pos.report'],['customers','Customer search & exchanges','pos.history']
+  ['billing','Billing','pos.read'],['dashboard','Dashboard','pos.report'],['customers','Customer search','pos.history'],['exchanges','Exchange','pos.return']
  ].filter(([, , permission])=>can(permission));
  const currentTab=allowedTabs.some(([key])=>key===tab)?tab:allowedTabs[0]?.[0];
  const [billSuccess,setBillSuccess]=useState('');
@@ -175,7 +175,8 @@ function Pos(){
    <nav aria-label="Store POS" className="cms-tabs">{allowedTabs.map(([key,label])=><button disabled={busy} key={key} aria-pressed={currentTab===key} onClick={()=>{setError('');setTab(key);}}>{label}</button>)}</nav>
 
    {currentTab==='dashboard'&&<Dashboard token={token} onReceipt={openReceipt} canCreateExamples={can('pos.examples')}/>}
-   {currentTab==='customers'&&<PosHistory token={token} onReceipt={openReceipt} onInventoryChanged={can('pos.return')?()=>{setReceipt(null);if(can('pos.read'))refresh();}:undefined}/>}
+   {currentTab==='customers'&&<PosHistory key="customers" token={token} onReceipt={can('pos.receipt')?openReceipt:undefined}/>}
+   {currentTab==='exchanges'&&<PosHistory key="exchanges" exchangeOnly token={token} onReceipt={can('pos.receipt')?openReceipt:undefined} onInventoryChanged={()=>{setReceipt(null);if(can('pos.read'))refresh();}}/>}
    {currentTab==='billing'&&<>
     <section className="staff-panel pos-scan-panel"><form className="scanner-row" onSubmit={scanBarcode}>
      <label>Scan garment barcode<input ref={scanner} autoFocus autoComplete="off" value={scan} disabled={busy} onChange={event=>setScan(event.target.value)} placeholder="e.g. 0012345678905"/></label><div className="scanner-submit"><button disabled={!scan.trim()||busy||!can('pos.bill')}>Add to bill</button>
