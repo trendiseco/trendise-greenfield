@@ -162,3 +162,12 @@ for its server-side AuthKey. Verify SMS sign-in and order ownership on the
 deployed storefront. This mode enables the login integration only. The
 current commerce server still requires development mode and local binding,
 so a production commerce deployment is a separate prerequisite.
+
+
+### Staff Operations
+
+Open `/operations` and sign in once with a staff ID and PIN. The page shows the Store POS, Warehouse, Admin or Super Admin workspaces granted to that staff member. The customer storefront is at `/`.
+
+Use Super Admin → Staff & roles to create roles, search action permissions, assign staff to a role and location, and view recent audit events. Store POS sales and history use the assigned store. Warehouse picking uses the existing central fulfilment queue. Cross-channel customer data and exports are separate grants. Staff management and the audit log are reserved for Super Admin. Receipt printing is a browser control and the permission controls its in-app button.
+
+New staff need an individual 6–12 digit PIN. Set a PIN for older custom staff accounts before they sign in. The built-in demo accounts retain their development PIN until changed. Staff sessions expire after eight hours and sign-out revokes the session. This development setup still requires production authentication controls before public deployment.

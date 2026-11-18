@@ -1,7 +1,7 @@
 import {DomainError} from './errors.mjs';
 
 export function warehouseInventory(session,query){
- this.permit(session,'warehouse.fulfill');
+ this.permit(session,'warehouse.inventory');
  const location=query.get('location')||'all',category=query.get('category')||'all';
  if(location!=='all'&&!this.locations.some(l=>l.id===location))throw new DomainError(400,'Unknown stock location');
  const search=(query.get('q')||'').trim().toLowerCase().slice(0,100);

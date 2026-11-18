@@ -40,3 +40,38 @@ test('HTTP: full mock customer -> warehouse -> POS and shared catalog stock',asy
  assert.equal(receipt.data.cancellationReturn.status,'received');
  assert.equal(core.stock[sku]['warehouse-hyd'],after+1);
 });
+
+test('staff sign-in, portal grants, delegated permissions and revocation',async t=>{
+ const {server,base}=await start();t.after(()=>server.close());
+ const post=(path,body,token)=>send(base,path,{method:'POST',body,token});
+ const root=await post('/api/auth/staff',{userId:'superadmin',pin:'1234'});
+ assert.equal(root.status,200);
+ const admin=root.data.token;
+ assert.ok(root.data.permissions.includes('users.manage'));
+ const role={name:'warehouse-picker',permissions:['warehouse.scan']};
+ assert.equal((await post('/api/admin/roles',role,admin)).status,200);
+ const staff={id:'picker-test',name:'Picker',role:role.name,locationId:'warehouse-hyd',active:true,pin:'641572'};
+ assert.equal((await post('/api/admin/users',staff,admin)).status,200);
+ assert.equal((await post('/api/auth/staff',{userId:staff.id,pin:'1234'})).status,401);
+ const login=await post('/api/auth/staff',{userId:staff.id,pin:staff.pin});
+ assert.equal(login.status,200);
+ assert.deepEqual(new Set(login.data.permissions),new Set(['warehouse.read','warehouse.scan']));
+ assert.equal(login.data.locationType,'warehouse');
+ const token=login.data.token;
+ assert.equal((await send(base,'/api/warehouse/orders',{token})).status,200);
+ assert.equal((await post('/api/warehouse/orders/TRD-99999/scan',{pickCode:'x',barcode:'x'},token)).status,404);
+ for(const path of ['/api/admin/access','/api/admin/audit','/api/admin/customer-extract','/api/pos/inventory']){
+  assert.equal((await send(base,path,{token})).status,403,path);
+ }
+ assert.equal((await post('/api/warehouse/orders/TRD-99999/dispatch',{},token)).status,403);
+ assert.equal((await post('/api/admin/roles',{...role,permissions:['users.manage']},admin)).status,400);
+ assert.equal((await post('/api/admin/roles',{...role,permissions:['warehouse.inventory']},admin)).status,200);
+ assert.equal((await send(base,'/api/warehouse/orders',{token})).status,403);
+ assert.equal((await send(base,'/api/warehouse/inventory',{token})).status,200);
+ const access=await send(base,'/api/admin/access',{token:admin});
+ assert.equal(access.data.users.find(user=>user.id===staff.id).pinCredential,undefined);
+ const audit=await send(base,'/api/admin/audit',{token:admin});
+ assert.ok(audit.data.entries.some(entry=>entry.type==='ROLE_SAVED'&&entry.actor==='superadmin'&&entry.permissions.includes('warehouse.inventory')));
+ assert.equal((await post('/api/auth/staff/logout',{},token)).status,200);
+ assert.equal((await send(base,'/api/me',{token})).status,401);
+});

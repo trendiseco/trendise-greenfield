@@ -1,4 +1,5 @@
 'use client';
+import StaffPortal,{useStaff} from '../../components/StaffPortal';
 import ActionFeedback from '../../components/ActionFeedback';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {api,cash} from '../../lib/api';
@@ -19,21 +20,26 @@ const pickable=status=>['paid','confirmed','picking'].includes(status);
 
 const warehouseTabs=[['orders','Orders & picking'],['returns','Returns'],['inventory','Products & inventory']];
 
-export default function Warehouse(){
- const [token,T]=useState(''),[pin,P]=useState(''),[orders,O]=useState(null),[selected,S]=useState(''),[order,D]=useState(null),[pickCode,PC]=useState(''),[barcode,BC]=useState(''),[message,M]=useState(''),[error,E]=useState(''),[queueError,QE]=useState(''),[busy,B]=useState(false),[reload,R]=useState(0);
+export default function WarehousePage(){
+ return <StaffPortal portal="warehouse"><Warehouse/></StaffPortal>;
+}
+
+function Warehouse(){
+ const {token,profile,logout}=useStaff();
+ const can=permission=>profile.permissions.includes(permission);
+ const [orders,O]=useState(null),[selected,S]=useState(''),[order,D]=useState(null),[pickCode,PC]=useState(''),[barcode,BC]=useState(''),[message,M]=useState(''),[error,E]=useState(''),[queueError,QE]=useState(''),[busy,B]=useState(false),[reload,R]=useState(0);
  const [section,openSection]=useStaffSection('orders');
- const view=warehouseTabs.some(([id])=>id===section)?section:'orders';
+ const tabs=warehouseTabs.filter(([id])=>can(id==='inventory'?'warehouse.inventory':'warehouse.read'));
+ const view=tabs.some(([id])=>id===section)?section:tabs[0]?.[0];
  const returnsView=view==='returns';
  const queue=returnsView?orders?.filter(row=>row.hasReturns):orders;
  const pickInput=useRef(null),garmentInput=useRef(null),inFlight=useRef(false);
  const expireSession=useCallback(()=>{
-  sessionStorage.removeItem('trd_warehouse_token');
-  T('');O(null);S('');D(null);QE('');M('');PC('');BC('');
-  E('Your warehouse session expired. Sign in again.');
+  O(null);S('');D(null);QE('');M('');PC('');BC('');
+  E('Your warehouse session expired. Sign in again through Operations.');
  },[]);
- useEffect(()=>{T(sessionStorage.getItem('trd_warehouse_token')||'');},[]);
  useEffect(()=>{
-  if(!token)return;
+  if(!profile.permissions.includes('warehouse.read'))return;
   const controller=new AbortController();
   let fetching=false;
   const refresh=async()=>{
@@ -46,7 +52,7 @@ export default function Warehouse(){
   const onVisible=()=>{if(!document.hidden)refresh();};
   document.addEventListener('visibilitychange',onVisible);
   return()=>{controller.abort();clearInterval(timer);document.removeEventListener('visibilitychange',onVisible);};
- },[token,reload,expireSession]);
+ },[token,reload,expireSession,profile.permissions.includes('warehouse.read')]);
  const selectedRow=orders?.find(row=>row.id===selected);
  const selectedStatus=selectedRow?.status,trackingRevision=selectedRow?.trackingRevision,selectedVerifiedUnits=selectedRow?.verifiedUnits,cancellationReceiptCount=selectedRow?.cancellationReceiptCount;
  useEffect(()=>{
@@ -65,7 +71,6 @@ export default function Warehouse(){
    input?.select();
   });
  }}finally{B(false);inFlight.current=false;}};
- const login=()=>run(async()=>{const r=await api('/api/auth/staff',{method:'POST',body:JSON.stringify({role:'warehouse',pin})});sessionStorage.setItem('trd_warehouse_token',r.token);T(r.token);P('');});
  const action=(name,body)=>api('/api/warehouse/orders/'+order.id+'/'+name,{token,method:'POST',body:JSON.stringify(body)});
  const scan=e=>{
   e.preventDefault();if(!order||!pickCode.trim()||!barcode.trim()||!pickable(order.status))return;
@@ -80,15 +85,14 @@ export default function Warehouse(){
  };
  const dispatch=()=>run(async()=>{const done=await action('dispatch',{});D(previous=>({...previous,status:done.status,shipment:done.shipment}));M('Mock dispatch recorded. AWB: '+done.shipment.awb);R(n=>n+1);},'dispatch');
  const deliver=()=>run(async()=>{const done=await action('delivered',{});D(previous=>({...previous,status:done.status,deliveredAt:done.deliveredAt,payment:done.payment}));M('Mock delivery recorded.');R(n=>n+1);},'deliver');
- if(!token)return <main className="container staff-login-page operations-login operations-warehouse"><div className="staff-login-card"><span className="panel-icon">▤</span><div className="eyebrow">TRENDISE / WAREHOUSE</div><h1>Warehouse <em>login.</em></h1><p>Match the pick-list code with the same order-line code on the physical label before mock dispatch.</p><label>Demo warehouse PIN<input value={pin} type="password" placeholder="Enter 1234" onChange={e=>P(e.target.value)} onKeyDown={e=>e.key==='Enter'&&login()}/></label><button className="button button-dark full" onClick={login} disabled={busy}>Sign in ↗</button>{error&&<p className="error-box" role="alert">{error}</p>}</div></main>;
  const expectedLine=order?resolvePickLine(order,pickCode):null;
  const active=order&&pickable(order.status);
  const orderedUnits=order?.items.reduce((sum,item)=>sum+item.qty,0)??0;
  const verifiedUnits=order?.items.reduce((sum,item)=>sum+Math.min(item.qty,order.verified?.[item.sku]||0),0)??0;
  const verified=orderedUnits>0&&verifiedUnits===orderedUnits;
  return <main className="staff-shell operations-workspace operations-warehouse">
-  <div className="staff-page-header"><div><div className="eyebrow">WAREHOUSE / DEVELOPMENT</div><h1>Warehouse <em>operations.</em></h1><p>Pick and dispatch orders, receive returns and check shared stock.</p></div><div className="button-row"><button className="small-outline" disabled={busy} onClick={()=>R(n=>n+1)}>Refresh</button><button className="small-outline" disabled={busy} onClick={()=>{sessionStorage.removeItem('trd_warehouse_token');T('');openSection('orders');O(null);S('');D(null);PC('');BC('');M('');E('');QE('');}}>Sign out</button></div></div>
-  <StaffTabs label="Warehouse sections" tabs={warehouseTabs} active={view} onChange={openSection}/>
+  <div className="staff-page-header"><div><div className="eyebrow">WAREHOUSE / DEVELOPMENT</div><h1>Warehouse <em>operations.</em></h1><p>Pick and dispatch orders, receive returns and check shared stock.</p></div><div className="button-row"><button className="small-outline" disabled={busy} onClick={()=>R(n=>n+1)}>Refresh</button><button className="small-outline" disabled={busy} onClick={logout}>Sign out</button></div></div>
+  <StaffTabs label="Warehouse sections" tabs={tabs} active={view} onChange={openSection}/>
   {view==='inventory'?<WarehouseInventory token={token} onSessionExpired={expireSession}/>:<div className="warehouse-layout"><section className="staff-panel warehouse-list"><div className="panel-heading"><h2>{returnsView?'Return queue':'Order queue'}</h2><span>{queue?.length??'—'} orders</span></div>
    <p className="hint">New orders appear automatically. Most recent first.</p>
    {queueError&&<p className="error-box" role="alert">{queueError}</p>}
@@ -102,10 +106,10 @@ export default function Warehouse(){
      {active&&<>
       <p><strong>{verifiedUnits} of {orderedUnits} pieces verified</strong></p>
       <p>{verified?'All scans complete. This order can be dispatched now.':'Verify each remaining piece to complete picking.'}</p>
-      <button className="button button-dark" disabled={busy||!verified} onClick={dispatch}>Complete mock dispatch ↗</button>
+      {can('warehouse.dispatch')&&<button className="button button-dark" disabled={busy||!verified} onClick={dispatch}>Complete mock dispatch ↗</button>}
      </>}
      {feedback('dispatch')}
-     {order.status==='shipped'&&<button className="button button-line" disabled={busy} onClick={deliver}>Mark mock delivered</button>}{feedback('deliver')}
+     {can('warehouse.deliver')&&order.status==='shipped'&&<button className="button button-line" disabled={busy} onClick={deliver}>Mark mock delivered</button>}{feedback('deliver')}
     </section>}
     {order.cancellationReturn&&<div className="operations-return-cases">
      <CancellationReturn order={order} staff/>
@@ -113,7 +117,7 @@ export default function Warehouse(){
       const key='cancellation-'+item.sku;
       const received=order.cancellationReturn.receipts.some(receipt=>receipt.sku===item.sku);
       return <div key={key} className="notice-box">
-       {!received&&<form className="stack" onSubmit={e=>{
+       {can('warehouse.cancellation')&&!received&&<form className="stack" onSubmit={e=>{
         e.preventDefault();
         const form=new FormData(e.currentTarget);
         run(async()=>{
@@ -139,7 +143,7 @@ export default function Warehouse(){
      {request.note&&<p>{request.note}</p>}
      {request.receivedAt&&<p>Received {formatTime(request.receivedAt)}{!request.inspection&&' · Awaiting inspection'}</p>}
      <ReturnOutcome inspection={request.inspection} staff/>
-     {request.receivedAt&&!request.inspection&&<form className="stack" onSubmit={e=>{
+     {can('warehouse.inspect')&&request.receivedAt&&!request.inspection&&<form className="stack" onSubmit={e=>{
       e.preventDefault();
       const form=new FormData(e.currentTarget);
       run(async()=>{
@@ -153,7 +157,7 @@ export default function Warehouse(){
       <label>Reason shown to customer<textarea name="reason" placeholder="e.g. Tags intact and no visible wear." required minLength={5} maxLength={500}/></label>
       <button className="button button-dark" disabled={busy}>Record final inspection</button>
      </form>}{feedback(key+'-inspect')}
-     {kind==='return'&&request.status==='approved'&&!request.receivedAt&&<form className="stack" onSubmit={e=>{
+     {can('warehouse.receive')&&kind==='return'&&request.status==='approved'&&!request.receivedAt&&<form className="stack" onSubmit={e=>{
       e.preventDefault();
       const form=new FormData(e.currentTarget);
       run(async()=>{D(await action('return-receipt',{sku:request.sku,barcode:form.get('returnBarcode'),quantity:form.get('returnQuantity')}));M('Mock return received for inspection.');},key+'-receive');
@@ -182,14 +186,14 @@ export default function Warehouse(){
        <dl><div><dt>Colour</dt><dd>{item.color}</dd></div><div><dt>Size</dt><dd>{item.size}</dd></div><div><dt>Quantity</dt><dd>{item.qty}</dd></div><div><dt>SKU</dt><dd>{item.sku}</dd></div><div><dt>Inventory barcode (SKU tag)</dt><dd>{item.barcode}</dd></div><div><dt>Line total</dt><dd>{cash(item.lineTotal)}</dd></div></dl>
        <p className="hint">Pick from: {order.allocations.filter(a=>a.sku===item.sku).map(a=>a.locationName+' × '+a.qty).join(' · ')||'Not recorded'}</p>
        <span className="verified-count">{order.verified[item.sku]||0} / {item.qty} matched</span>
-       <div className="warehouse-pick-label"><strong>1 · Order-line barcode</strong><PickBarcode value={warehousePickCode(order.id,index)}/>{active&&(order.verified[item.sku]||0)<item.qty&&<button type="button" className="small-outline warehouse-use-pick-code" disabled={busy} onClick={()=>{
+       <div className="warehouse-pick-label"><strong>1 · Order-line barcode</strong><PickBarcode value={warehousePickCode(order.id,index)}/>{can('warehouse.scan')&&active&&(order.verified[item.sku]||0)<item.qty&&<button type="button" className="small-outline warehouse-use-pick-code" disabled={busy} onClick={()=>{
         PC(warehousePickCode(order.id,index));BC('');E('');M('');
         requestAnimationFrame(()=>garmentInput.current?.focus());
        }}>Use this order line</button>}<small>2 · Scan the same order-line code on the physical label.</small></div>
       </div>
      </article>)}
     </div>
-    {!returnsView&&active&&!verified&&<form className="warehouse-scanner" onSubmit={scan}><h3>Dual barcode verification</h3><p>Scan the order-line code from the pick list in field 1. Scan the same code from the physical label in field 2.</p>
+    {can('warehouse.scan')&&!returnsView&&active&&!verified&&<form className="warehouse-scanner" onSubmit={scan}><h3>Dual barcode verification</h3><p>Scan the order-line code from the pick list in field 1. Scan the same code from the physical label in field 2.</p>
      <label>1 / Order-line barcode<input ref={pickInput} value={pickCode} onChange={e=>{PC(e.target.value);BC('');E('');}} autoComplete="off" placeholder={warehousePickCode(order.id,0)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();if(pickCode.trim())garmentInput.current?.focus();}}}/></label>
      {expectedLine&&<div className="notice-box" id="warehouse-expected-tag">
       <strong>Selected: {expectedLine.name} · {expectedLine.color} / {expectedLine.size}</strong>

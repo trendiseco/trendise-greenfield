@@ -35,7 +35,6 @@ function indiaMidnight(date) {
 
 export const posMethods = {
   posLocation(session) {
-    this.permit(session, 'pos.sell');
     const location = this.locations.find(entry => entry.id === (session.locationId || 'store-hyd-01') && entry.type === 'store');
     if (!location) throw new DomainError(403, 'A store assignment is required');
     return location;
@@ -50,6 +49,7 @@ export const posMethods = {
   },
 
   posInventory(session) {
+    this.permit(session,'pos.read');
     const location = this.posLocation(session);
     const products = this.listing('store').map(product => ({
       ...product,
@@ -78,8 +78,7 @@ export const posMethods = {
   },
 
   posPromotionList(session, online=false) {
-    if(online)this.permit(session,'offers.manage');
-    else if (session.role !== 'superadmin') throw new DomainError(403, 'Super Admin required');
+    this.permit(session,online?'offers.pricing.read':'pos.pricing.read');
     return Object.fromEntries(this.products.flatMap(product => product.variants.map(variant => [
       variant.sku, {productId:product.id, name:product.name, category:product.category, barcode:variant.barcode,
         color:variant.color, size:variant.size, active:variant.active!==false, websitePrice:variant.price, storePrice:variant.posPrice??variant.price,
@@ -88,6 +87,7 @@ export const posMethods = {
   },
 
   savePosPromotion(session, {sku, scope='variant', target, type, value}, online=false) {
+    this.permit(session,online?'offers.promotions':'pos.promotions');
     const catalog = this.posPromotionList(session,online);
     if (!['variant','product','category','all'].includes(scope)) throw new DomainError(400,'Choose a promotion scope');
     const entries = Object.entries(catalog).filter(([key,entry]) =>
@@ -107,6 +107,7 @@ export const posMethods = {
   },
 
   importPosPrices(session, rows, online=false) {
+    this.permit(session,online?'offers.prices':'pos.prices');
     const catalog = this.posPromotionList(session,online);
     if (!Array.isArray(rows)||!rows.length||rows.length>10000) throw new DomainError(400,'Upload 1 to 10,000 price rows');
     const seen=new Set();
@@ -140,7 +141,8 @@ export const posMethods = {
   },
 
   posDashboard(session, period, year = null, allStores = false) {
-    const location = allStores && ['admin','superadmin'].includes(session.role) ? null : this.posLocation(session);
+    this.permit(session,allStores?'reports.read':'pos.report');
+    const location = allStores ? null : this.posLocation(session);
     if (!periods.includes(period)) throw new DomainError(400, 'Choose a reporting period');
     const now = this.orderNow();
     const currentYear = new Date(now + 19800000).getUTCFullYear();
@@ -163,6 +165,7 @@ export const posMethods = {
   },
 
   async seedPosExamples(session) {
+    this.permit(session,'pos.examples');
     return this.serialized(() => {
       const location = this.posLocation(session);
       const existing = [...this.sales.values()].filter(sale => sale.example && sale.locationId === location.id);
@@ -206,7 +209,8 @@ export const posMethods = {
   },
 
   purchaseHistory(session, phone) {
-    const manager = ['admin', 'superadmin'].includes(session.role);
+    const manager = this.staffProfile(session).permissions.includes('customers.read');
+    if(!manager)this.permit(session,'pos.history');
     const location = manager ? null : this.posLocation(session);
     const sales = [...this.sales.values()].filter(sale => sale.customer?.phone === phone && (!location || sale.locationId === location.id)).reverse();
     const orders = [...this.orders.values()].filter(order => order.phone === phone).reverse().map(purchaseOrder);
@@ -214,7 +218,7 @@ export const posMethods = {
   },
 
   purchaseExtract(session, {channel,from,to}) {
-    if(!['admin','superadmin'].includes(session.role))throw new DomainError(403,'Admin access required');
+    this.permit(session,'customers.export');
     if(!['sales','orders'].includes(channel))throw new DomainError(400,'Choose Store POS or Website');
     const start=indiaMidnight(from),last=indiaMidnight(to);
     if(!Number.isFinite(start)||!Number.isFinite(last)||start>last)throw new DomainError(400,'Enter a valid From and To date');
@@ -225,6 +229,7 @@ export const posMethods = {
   },
 
   async returnPosItem(session, id, body, key) {
+    this.permit(session,'pos.return');
     return this.serialized(() => {
       const location = this.posLocation(session);
       const sale = this.sales.get(id);
@@ -274,13 +279,13 @@ export const posMethods = {
   },
 
   posTermsSettings(session) {
-    if (session.role !== 'superadmin') throw new DomainError(403, 'Super Admin required');
+    this.permit(session,'pos.terms');
     const terms = this.posReceiptTerms();
     return {text: Array.isArray(terms) ? terms.join('\n') : terms};
   },
 
   savePosTerms(session, text) {
-    if (session.role !== 'superadmin') throw new DomainError(403, 'Super Admin required');
+    this.permit(session,'pos.terms');
     if (typeof text !== 'string' || !text.trim() || text.length > 6000) {
       throw new DomainError(400, 'Enter receipt terms of up to 6,000 characters');
     }

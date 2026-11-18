@@ -1,5 +1,6 @@
 'use client';
 import ActionFeedback from '../../components/ActionFeedback';
+import StaffPortal,{useStaff} from '../../components/StaffPortal';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import StorePhoto from '../../components/StorePhoto';
 import PosHistory,{PosReceipt,PosSaleList} from '../../components/PosHistory';
@@ -8,7 +9,7 @@ import {api,cash,uniqueKey} from '../../lib/api';
 const refreshInterval=5000;
 const periods={today:'Today',week:'This week',month:'This month',year:'This year',previous:'Select a year'};
 
-function Dashboard({token,onReceipt}) {
+function Dashboard({token,onReceipt,canCreateExamples}) {
  const [year,setYear]=useState(''),[years,setYears]=useState([]),[revision,setRevision]=useState(0),[creating,setCreating]=useState(false),[notice,setNotice]=useState('');
  const [period,setPeriod]=useState('today'),[report,setReport]=useState(null),[error,setError]=useState('');
  useEffect(()=>{
@@ -51,23 +52,33 @@ function Dashboard({token,onReceipt}) {
   <label>Period<select value={period} onChange={event=>{setReport(null);setError('');setPeriod(event.target.value);}}>{Object.entries(periods).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
   {period==='previous'&&<label>Calendar year<select value={year} onChange={event=>{setReport(null);setError('');setYear(event.target.value);}}>{years.map(value=><option key={value}>{value}</option>)}</select></label>}
   <p>India time · Weeks start on Monday.</p>
-  <button disabled={creating} onClick={createExamples}>{creating?'Saving…':'Add sample bills'}</button>
+  {canCreateExamples&&<button disabled={creating} onClick={createExamples}>{creating?'Saving…':'Add sample bills'}</button>}
   <ActionFeedback error={error} success={notice}/>
   {report&&<><div className="metric-row">{[['Bills',report.sales.length],['Customers',report.customers],['Gross sales',cash(report.gross)],['Mock refunds',cash(report.refunded)],['Net sales',cash(report.net)]].map(([label,value])=><div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div><PosSaleList sales={report.sales} onReceipt={onReceipt}/></>}
  </section>;
 }
 
-export default function Pos(){
- const [token,setToken]=useState(''),[pin,setPin]=useState(''),[userId,setUserId]=useState(''),[inventory,setInventory]=useState(null);
+export default function PosPage(){
+ return <StaffPortal portal="pos"><Pos/></StaffPortal>;
+}
+
+function Pos(){
+ const {token,profile,logout}=useStaff();
+ const can=permission=>profile.permissions.includes(permission);
+ const [inventory,setInventory]=useState(null);
  const [scan,setScan]=useState(''),[cart,setCart]=useState([]),[name,setName]=useState(''),[phone,setPhone]=useState('');
  const [method,setMethod]=useState('UPI'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[receipt,setReceipt]=useState(null),[search,setSearch]=useState(''),[tab,setTab]=useState('billing');
+ const allowedTabs=[
+  ['billing','Billing','pos.read'],['dashboard','Dashboard','pos.report'],['customers','Customer search & returns','pos.history']
+ ].filter(([, , permission])=>can(permission));
+ const currentTab=allowedTabs.some(([key])=>key===tab)?tab:allowedTabs[0]?.[0];
  const [billSuccess,setBillSuccess]=useState('');
  const [billingAction,setBillingAction]=useState('scan');
  const [scanStatus,setScanStatus]=useState('');
  const [stockRefreshError,setStockRefreshError]=useState('');
  const scanner=useRef(null),attempt=useRef(null),saving=useRef(false),inventoryRequest=useRef(0);
  useEffect(()=>{
-  if(!token)return;
+  if(!can('pos.read'))return;
   const controller=new AbortController();
   let pending=false;
   const update=async()=>{
@@ -78,6 +89,7 @@ export default function Pos(){
    } finally{pending=false;}
   };
   const onStorage=event=>{if(['trd_categories_updated','trd_pos_prices_updated','trd_stock_transferred'].includes(event.key))update();};
+  update();
   const timer=setInterval(update,refreshInterval);
   window.addEventListener('focus',update);
   window.addEventListener('storage',onStorage);
@@ -89,7 +101,7 @@ export default function Pos(){
    window.removeEventListener('storage',onStorage);
    document.removeEventListener('visibilitychange',update);
   };
- },[token]);
+ },[token,profile.permissions.includes('pos.read')]);
  const all=useMemo(()=>inventory?.products.flatMap(product=>product.variants.map(variant=>({...variant,product})))||[],[inventory]);
  const refresh=async(t=token,signal)=>{
   const request=++inventoryRequest.current;
@@ -103,14 +115,8 @@ export default function Pos(){
    if(request===inventoryRequest.current&&!signal?.aborted)setStockRefreshError(error.message);
   }
  };
- useEffect(()=>{const t=sessionStorage.getItem('trd_pos_token');if(t){setToken(t);refresh(t);}},[]);
- async function login(event){
-  event.preventDefault();setBusy(true);setError('');
-  try{const r=await api('/api/auth/staff',{method:'POST',body:JSON.stringify({role:'pos',pin,userId:userId.trim()||'pos'})});sessionStorage.setItem('trd_pos_token',r.token);setToken(r.token);await refresh(r.token);}
-  catch(error){setError(error.message);}finally{setBusy(false);}
- }
  function add(variant){
-  if(busy)return;
+  if(busy||!can('pos.bill'))return;
   setBillingAction('scan');setBillSuccess('');
   const existing=cart.find(line=>line.sku===variant.sku);
   const qty=existing?.qty||0;
@@ -151,7 +157,7 @@ export default function Pos(){
  const total=lines.reduce((sum,line)=>sum+cents(line.variant.salePrice)*line.qty,0);
  const gst=lines.reduce((sum,line)=>sum+Math.round(cents(line.variant.salePrice)*line.qty*5/105),0);
  async function complete(event){
-  event.preventDefault();if(saving.current||!cart.length)return;
+  event.preventDefault();if(saving.current||!cart.length||!can('pos.bill'))return;
   const body=JSON.stringify({items:cart.map(({sku,qty})=>({sku,qty})),customer:{name,phone},paymentMethod:method,expectedTotal:total/100});
   if(attempt.current?.body!==body)attempt.current={body,key:uniqueKey()};
   saving.current=true;setBillingAction('save');setBillSuccess('');setBusy(true);setError('');
@@ -162,19 +168,17 @@ export default function Pos(){
   finally{saving.current=false;setBusy(false);}
  }
  function openReceipt(sale){setReceipt(sale);window.scrollTo(0,0);}
- function logout(){setBillSuccess('');inventoryRequest.current++;setStockRefreshError('');sessionStorage.removeItem('trd_pos_token');setToken('');setCart([]);setReceipt(null);setName('');setPhone('');setUserId('');setPin('');setScan('');setSearch('');setInventory(null);setError('');setScanStatus('');setTab('billing');attempt.current=null;}
- if(!token)return <main className="container staff-login-page"><form className="staff-login-card" onSubmit={login}><div className="eyebrow">TRENDISE / STORE OPERATIONS</div><h1>Store <em>POS.</em></h1><label>Staff ID<input value={userId} onChange={event=>setUserId(event.target.value)} placeholder="e.g. pos"/></label><label>Demo staff PIN<input required value={pin} onChange={event=>setPin(event.target.value)} placeholder="e.g. 1234" type="password"/></label><button disabled={busy} className="button button-dark full">Sign in to register</button>{error&&<p className="error-box" role="alert">{error}</p>}</form></main>;
  return <main className="staff-shell pos-workspace">
-  {receipt&&<PosReceipt sale={receipt} onClose={()=>{setReceipt(null);scanner.current?.focus();}}/>}
+  {receipt&&<PosReceipt sale={receipt} canPrint={can('pos.receipt')} onClose={()=>{setReceipt(null);scanner.current?.focus();}}/>}
   <div className="pos-print-hide">
    <div className="staff-page-header"><div><div className="eyebrow">{inventory?.locationName||'STORE'}</div><h1>Point of <em>sale.</em></h1><p>Development register · payments and refunds are simulated.</p></div><button disabled={busy} className="small-outline" onClick={logout}>Sign out</button></div>
-   <nav aria-label="Store POS" className="cms-tabs">{Object.entries({billing:'Billing',dashboard:'Dashboard',customers:'Customer search & returns'}).map(([key,label])=><button disabled={busy} key={key} aria-pressed={tab===key} onClick={()=>{setError('');setTab(key);}}>{label}</button>)}</nav>
+   <nav aria-label="Store POS" className="cms-tabs">{allowedTabs.map(([key,label])=><button disabled={busy} key={key} aria-pressed={currentTab===key} onClick={()=>{setError('');setTab(key);}}>{label}</button>)}</nav>
 
-   {tab==='dashboard'&&<Dashboard token={token} onReceipt={openReceipt}/>}
-   {tab==='customers'&&<PosHistory token={token} onReceipt={openReceipt} onInventoryChanged={()=>{setReceipt(null);refresh();}}/>}
-   {tab==='billing'&&<>
+   {currentTab==='dashboard'&&<Dashboard token={token} onReceipt={openReceipt} canCreateExamples={can('pos.examples')}/>}
+   {currentTab==='customers'&&<PosHistory token={token} onReceipt={openReceipt} onInventoryChanged={can('pos.return')?()=>{setReceipt(null);if(can('pos.read'))refresh();}:undefined}/>}
+   {currentTab==='billing'&&<>
     <section className="staff-panel pos-scan-panel"><form className="scanner-row" onSubmit={scanBarcode}>
-     <label>Scan garment barcode<input ref={scanner} autoFocus autoComplete="off" value={scan} disabled={busy} onChange={event=>setScan(event.target.value)} placeholder="e.g. 0012345678905"/></label><div className="scanner-submit"><button disabled={!scan.trim()||busy}>Add to bill</button>
+     <label>Scan garment barcode<input ref={scanner} autoFocus autoComplete="off" value={scan} disabled={busy} onChange={event=>setScan(event.target.value)} placeholder="e.g. 0012345678905"/></label><div className="scanner-submit"><button disabled={!scan.trim()||busy||!can('pos.bill')}>Add to bill</button>
      <ActionFeedback error={billingAction==='scan'?error:''} success={scanStatus}/></div>
     </form><ActionFeedback error={stockRefreshError&&'Stock refresh failed. '+stockRefreshError}/><p className="hint">Stock and prices refresh automatically.</p></section>
     <div className="pos-layout"><aside className="staff-panel pos-register">
@@ -188,13 +192,13 @@ export default function Pos(){
       <div className="summary-row"><span>Store discount</span><strong>{cash((subtotal-total)/100)}</strong></div>
       <div className="summary-row"><span>Included GST (5%)</span><strong>{cash(gst/100)}</strong></div>
       <div className="pos-grand"><span>Total</span><strong>{cash(total/100)}</strong></div>
-      <button className="button button-dark full" disabled={busy||!cart.length}>{busy?'Saving…':'Save bill'}</button>
+      <button className="button button-dark full" disabled={busy||!cart.length||!can('pos.bill')}>{busy?'Saving…':'Save bill'}</button>
       {billingAction==='save'&&<ActionFeedback error={error} success={billSuccess} pending={busy?'Saving bill…':''}/>}
      </form>
     </aside>
     <section className="staff-panel pos-products"><div className="panel-heading"><h2>Find a product</h2><button disabled={busy} onClick={()=>refresh()}>Refresh stock & prices</button></div>
      <div className="pos-search"><input aria-label="Search products" placeholder="e.g. Oxford, M or Sky Blue" value={search} onChange={event=>setSearch(event.target.value)}/></div>
-     <div className="pos-product-grid">{all.filter(variant=>`${variant.product.name} ${variant.size} ${variant.color} ${variant.sku}`.toLowerCase().includes(search.toLowerCase())).slice(0,48).map(variant=><button className="pos-product" key={variant.sku} onClick={()=>add(variant)} disabled={busy||!variant.available}><StorePhoto className="pos-product-photo" product={variant.product} color={variant.color}/><span className="pos-product-info"><strong>{variant.product.name}</strong><small>{variant.color} / {variant.size}</small><b>{variant.salePrice<variant.regularPrice&&<del>{cash(variant.regularPrice)} </del>}{cash(variant.salePrice)}</b><em>{variant.available} available</em></span></button>)}</div>
+     <div className="pos-product-grid">{all.filter(variant=>`${variant.product.name} ${variant.size} ${variant.color} ${variant.sku}`.toLowerCase().includes(search.toLowerCase())).slice(0,48).map(variant=><button className="pos-product" key={variant.sku} onClick={()=>add(variant)} disabled={busy||!variant.available||!can('pos.bill')}><StorePhoto className="pos-product-photo" product={variant.product} color={variant.color}/><span className="pos-product-info"><strong>{variant.product.name}</strong><small>{variant.color} / {variant.size}</small><b>{variant.salePrice<variant.regularPrice&&<del>{cash(variant.regularPrice)} </del>}{cash(variant.salePrice)}</b><em>{variant.available} available</em></span></button>)}</div>
     </section></div>
    </>}
   </div>

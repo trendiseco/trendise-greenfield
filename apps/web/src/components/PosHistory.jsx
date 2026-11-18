@@ -7,10 +7,10 @@ import PurchaseChannel from './PurchaseChannel';
 
 export const saleDate = at => new Date(at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',dateStyle:'medium',timeStyle:'short'});
 
-export function PosReceipt({sale,onClose}) {
+export function PosReceipt({sale,onClose,canPrint=true}) {
  const {quote}=sale;
  return <section className="staff-panel pos-receipt" aria-label="Saved receipt">
-  <div className="panel-heading"><h2>TRENDISE · Store receipt</h2><div className="button-row pos-print-hide"><button onClick={()=>window.print()}>Print bill</button><button onClick={onClose}>Close receipt</button></div></div>
+  <div className="panel-heading"><h2>TRENDISE · Store receipt</h2><div className="button-row pos-print-hide">{canPrint&&<button onClick={()=>window.print()}>Print bill</button>}<button onClick={onClose}>Close receipt</button></div></div>
   <p>{sale.example&&'Sample bill · '}{sale.id} · {sale.locationName||sale.locationId} · {saleDate(sale.at)}</p>
   <p>{sale.customer ? `${sale.customer.name} · ${sale.customer.phone}` : 'Customer details unavailable on this older bill'}{sale.staffId&&` · Cashier ${sale.staffId}`}</p>
   <BillItems items={sale.items}/>

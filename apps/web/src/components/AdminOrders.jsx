@@ -10,7 +10,7 @@ import ShipmentTracking from './ShipmentTracking';
 import OrderCharges from './OrderCharges';
 
 const date=value=>value?new Date(value).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',dateStyle:'medium',timeStyle:'short'})+' IST':'—';
-export default function AdminOrders({token,filter,onFilter,onReviewed}){
+export default function AdminOrders({token,filter,onFilter,onReviewed,canReview=true}){
  const categories=['all','returns','cancelled','shipped','picking'];
  const [search,S]=useState(''),[query,Q]=useState(''),[page,P]=useState(1),[list,L]=useState(null),[selected,SEL]=useState(''),[detail,D]=useState(null),[reload,R]=useState(0),[listError,LE]=useState(''),[detailError,DE]=useState(''),[notice,N]=useState(''),[review,V]=useState(null),[busy,B]=useState(false);
  useEffect(()=>{
@@ -79,7 +79,7 @@ export default function AdminOrders({token,filter,onFilter,onReviewed}){
      <ReturnOutcome inspection={request.inspection} staff/>
      {request.note&&<p>{request.note}</p>}
      {request.review&&<p><strong>Decision:</strong> {request.review.note} <small>({date(request.review.decidedAt)})</small></p>}
-     {request.status==='requested'&&review?.caseKey!==key&&<button className="small-outline" disabled={busy} onClick={()=>{V({caseKey:key,decision:'approved',note:''});DE('');N('');}}>Review request</button>}
+     {canReview&&request.status==='requested'&&review?.caseKey!==key&&<button className="small-outline" disabled={busy} onClick={()=>{V({caseKey:key,decision:'approved',note:''});DE('');N('');}}>Review request</button>}
      {review?.caseKey===key&&<form className="admin-order-review" onSubmit={submit}>
       <label>Decision<select value={review.decision} onChange={e=>V({...review,decision:e.target.value})}><option value="approved">Approve for follow-up</option><option value="rejected">Decline</option></select></label>
       <label>Reason shown to customer<textarea required minLength={5} placeholder="e.g. Approved for inspection because the item arrived damaged." maxLength={500} value={review.note} onChange={e=>V({...review,note:e.target.value})}/></label>

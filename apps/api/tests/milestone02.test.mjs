@@ -62,8 +62,8 @@ test('image type, size and alternative text validated',async()=>{
 });
 test('RBAC changes and disabled users revoke active session privileges',async()=>{
  const c=new Commerce(),login=c.staffLogin('admin','1234');await assert.rejects(c.saveUser(admin,{id:'x'}),{status:403});
- await c.saveRole(superadmin,{name:'editor',permissions:['catalog.edit']});await c.saveUser(superadmin,{id:'editor1',name:'Editor',role:'editor',active:true,locationId:'warehouse-hyd'});
- const e=c.staffLogin('editor','1234','editor1');await c.saveDraft(c.session(e.token),product());await assert.rejects(c.submitDraft(c.session(e.token),'bad',1),{status:403});
+ await c.saveRole(superadmin,{name:'editor',permissions:['catalog.edit']});await c.saveUser(superadmin,{id:'editor1',name:'Editor',role:'editor',active:true,locationId:'warehouse-hyd',pin:'641572'});
+ const e=c.staffLogin('editor','641572','editor1');await c.saveDraft(c.session(e.token),product());await assert.rejects(c.submitDraft(c.session(e.token),'bad',1),{status:403});
  await c.saveUser(superadmin,{...c.users.find(u=>u.id==='admin'),active:false});assert.throws(()=>c.session(login.token),{status:401});
  await assert.rejects(c.saveRole(superadmin,{name:'editor',permissions:['*']}),{status:400});await assert.rejects(c.saveUser(superadmin,{...c.users[1],active:false}),{status:409});
 });

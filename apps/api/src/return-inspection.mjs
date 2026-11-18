@@ -15,7 +15,7 @@ function lineShare(order,item,amount){
 export const returnInspectionMethods={
  async inspectOrderReturn(session,id,body){
   return this.serialized(()=>{
-   this.permit(session,'warehouse.fulfill');
+   this.permit(session,'warehouse.inspect');
    const order=this.orders.get(id);
    if(!order)throw new DomainError(404,'Order not found');
    const request=orderCases(order).find(entry=>entry.kind==='return'&&entry.request.sku===body.sku)?.request;

@@ -1,12 +1,9 @@
 import {DomainError} from './errors.mjs';
 import {orderCases,orderListLabels} from '../../../shared/admin-orders.mjs';
 
-function requireManagement(session){
- if(!['admin','superadmin'].includes(session.role))throw new DomainError(403,'Admin access required');
-}
 export const adminOrderMethods={
  adminOrderList(session,query){
-  requireManagement(session);
+  this.permit(session,'orders.read');
   const search=String(query.get('q')||'').trim().toLowerCase().slice(0,100);
   const status=query.get('status')||'all';
   if(status!=='paid'&&!Object.hasOwn(orderListLabels,status))throw new DomainError(400,'Invalid order filter');
@@ -29,14 +26,14 @@ export const adminOrderMethods={
   return {orders:matches.slice((page-1)*pageSize,page*pageSize),total:matches.length,page,pageCount};
  },
  adminOrderDetail(session,id){
-  requireManagement(session);
+  this.permit(session,'orders.read');
   const order=this.orders.get(id);
   if(!order)throw new DomainError(404,'Order not found');
   return structuredClone(order);
  },
  async reviewOrderCase(session,id,body){
   return this.serialized(()=>{
-   requireManagement(session);
+   this.permit(session,'orders.review');
    const order=this.orders.get(id);
    if(!order)throw new DomainError(404,'Order not found');
    const entry=orderCases(order).find(item=>item.key===body.caseKey);

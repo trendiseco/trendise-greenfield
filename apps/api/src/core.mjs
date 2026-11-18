@@ -1,3 +1,4 @@
+import {effectivePermissions,reservedPermissions,staffPermissions} from '../../../shared/staff-access.mjs';
 import {posMethods} from './pos.mjs';
 import {warehouseInventory} from './warehouse-inventory.mjs';
 import {resolvePickLine} from '../../../shared/warehouse-pick.mjs';
@@ -8,7 +9,7 @@ import {lookupDeliveryPin} from './pin-directory.mjs';
 import {orderEligibility,paymentLabels,returnReasons,policyDocument} from '../../../shared/order-policy.mjs';
 import {upgradeSizeChart,validateSizeChart} from '../../../shared/size-chart.mjs';
 import {websiteState,websiteMethods} from './website.mjs';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
 import { initialProducts, initialLocations, generateMockStock, policies } from './seed.mjs';
 
 import {DomainError} from './errors.mjs';
@@ -81,8 +82,24 @@ export class Commerce {
     this.sessions.set(token,{role:'customer',phone,smsVerified,...(smsVerified?{expiresAt:Date.now()+86400000}:{})});
     return {token,role:'customer',phone};
   }
-  staffLogin(role,pin,userId=role) {if(!this.roles[role]||pin!=='1234')throw new DomainError(401,'Invalid mock staff credentials');const user=this.users.find(u=>u.id===userId&&u.role===role&&u.active);if(!user)throw new DomainError(401,'Inactive or unknown demo user');const token=randomUUID();this.sessions.set(token,{role,userId:user.id,locationId:user.locationId});return {token,role};}
-  session(token,allowed) {const session=this.sessions.get(token);if(!session||(session.expiresAt&&session.expiresAt<=Date.now())||(session.role==='customer'&&this.requireVerifiedSms&&!session.smsVerified))throw new DomainError(401,'Please log in');if(session.role==='customer')session.phone=String(session.phone).replace(/\D/g,'').slice(-10);if(session.userId){const user=this.users.find(u=>u.id===session.userId&&u.active);if(!user)throw new DomainError(401,'Staff access revoked');session.role=user.role;session.locationId=user.locationId;}if(allowed&&!allowed.includes(session.role))throw new DomainError(403,'You do not have permission for this action');return session;}
+  staffLogin(role,pin,userId=role) {
+    const user=this.users.find(entry=>entry.id===userId&&(!role||entry.role===role)&&entry.active);
+    if(!user||!Object.hasOwn(this.roles,user.role)||!/^\d{4,12}$/.test(pin))throw new DomainError(401,'Invalid staff credentials');
+    const credential=user.pinCredential;
+    const demoUser=['admin','superadmin','pos','warehouse'].includes(user.id);
+    const valid=credential
+      ? timingSafeEqual(scryptSync(pin,credential.salt,32),Buffer.from(credential.hash,'hex'))
+      : demoUser&&pin==='1234';
+    if(!valid)throw new DomainError(401,'Invalid staff credentials');
+    const token=randomUUID();
+    this.sessions.set(token,{role:user.role,userId:user.id,locationId:user.locationId,expiresAt:Date.now()+8*60*60*1000});
+    return {token,...this.staffProfile(this.sessions.get(token))};
+  }
+  staffProfile(session) {
+    return {...session,locationType:this.locations.find(location=>location.id===session.locationId)?.type,permissions:effectivePermissions(session.role,this.roles[session.role])};
+  }
+
+  session(token,allowed) {const session=this.sessions.get(token);if(!session||(session.userId&&!session.expiresAt)||(session.expiresAt&&session.expiresAt<=Date.now())||(session.role==='customer'&&this.requireVerifiedSms&&!session.smsVerified))throw new DomainError(401,'Please log in');if(session.role==='customer')session.phone=String(session.phone).replace(/\D/g,'').slice(-10);if(session.userId){const user=this.users.find(u=>u.id===session.userId&&u.active);if(!user)throw new DomainError(401,'Staff access revoked');session.role=user.role;session.locationId=user.locationId;}if(allowed&&!allowed.includes(session.role))throw new DomainError(403,'You do not have permission for this action');return session;}
   normalizeLines(lines) {if(!Array.isArray(lines)||!lines.length)throw new DomainError(400,'Add at least one product');const map=new Map();for(const raw of lines){const sku=String(raw.sku||'');const qty=Number(raw.qty);if(!Number.isInteger(qty)||qty<1||qty>25)throw new DomainError(400,'Quantity must be between 1 and 25');if(this.product(sku).variant.active===false)throw new DomainError(409,'Variant is inactive');map.set(sku,(map.get(sku)||0)+qty);}return [...map].map(([sku,qty])=>{if(qty>25)throw new DomainError(400,'Maximum quantity exceeded');return {sku,qty};});}
   websitePriceFields(variant) {
     const {regularPrice,salePrice}=this.posPricing(variant,true);
@@ -152,6 +169,7 @@ export class Commerce {
   });}
   decrement(allocation,reason,ref){const before=this.stock[allocation.sku][allocation.locationId];this.stock[allocation.sku][allocation.locationId]-=allocation.qty;this.ledger.push({id:randomUUID(),sku:allocation.sku,locationId:allocation.locationId,delta:-allocation.qty,before,after:this.stock[allocation.sku][allocation.locationId],reason,ref,at:new Date().toISOString()});}
   async completePosSale(session,body){return this.serialized(()=>{
+    this.permit(session,'pos.bill');
     const location=this.posLocation(session);
     const key=String(body.idempotencyKey||'');if(key.length<6)throw new DomainError(400,'Idempotency key required');
     const eventKey=`pos:${session.role}:${location.id}:${key}`;
@@ -173,13 +191,13 @@ export class Commerce {
     this.sales.set(id,sale);this.audit.push({type:'POS_SALE',id,at:sale.at});
     const response={sale:clone(sale),message:'Demo sale completed. No payment collected.'};this.setIdempotent(eventKey,fingerprint,response);return response;
   });}
-  ordersFor(session) {if(session.role==='customer')return [...this.orders.values()].filter(o=>o.phone===session.phone).map(o=>({...clone(o),...orderEligibility(o,this.orderNow())}));if(['warehouse','admin','superadmin'].includes(session.role))return [...this.orders.values()].map(clone);throw new DomainError(403,'Cannot view orders');}
+  ordersFor(session) {if(session.role==='customer')return [...this.orders.values()].filter(o=>o.phone===session.phone).map(o=>({...clone(o),...orderEligibility(o,this.orderNow())}));this.permit(session,'orders.read');return [...this.orders.values()].map(clone);}
   warehouseQueue(session){
-    this.permit(session,'warehouse.fulfill');
+    this.permit(session,'warehouse.read');
     return [...this.orders.values()].reverse().map(order=>({id:order.id,status:order.status,placedAt:order.placedAt,lineCount:order.items.length,hasReturns:Boolean(order.returnRequests?.length||order.returnRequest||order.cancellationReturn),trackingRevision:order.shiprocketOrder?.revision,cancellationReceiptCount:order.cancellationReturn?.receipts.length,verifiedUnits:order.items.reduce((sum,item)=>sum+Math.min(item.qty,order.verified?.[item.sku]||0),0),units:order.items.reduce((sum,item)=>sum+item.qty,0)}));
   }
   warehouseOrder(session,orderId){
-    this.permit(session,'warehouse.fulfill');
+    this.permit(session,'warehouse.read');
     const order=this.orders.get(orderId);if(!order)throw new DomainError(404,'Order not found');
     const detail=clone(order);
     detail.items=detail.items.map(item=>{
@@ -192,7 +210,7 @@ export class Commerce {
     return detail;
   }
   async warehouseVerify(session,orderId,pickCode,barcode){return this.serialized(()=>{
-    this.permit(session,'warehouse.fulfill');
+    this.permit(session,'warehouse.scan');
     const order=this.orders.get(orderId);if(!order)throw new DomainError(404,'Order not found');
     if(!['paid','confirmed','picking'].includes(order.status))throw new DomainError(409,'Order is not available for picking');
     const expected=String(pickCode||'').trim();
@@ -214,7 +232,7 @@ export class Commerce {
     return {orderId,sku,scanned:order.verified[sku],required:item.qty,complete,allVerified:clone(order.verified)};
   });}
   async dispatch(session,orderId){return this.serialized(()=>{
-    this.permit(session,'warehouse.fulfill');
+    this.permit(session,'warehouse.dispatch');
     const order=this.orders.get(orderId);if(!order)throw new DomainError(404,'Order not found');
     if(order.status==='shipped')return clone(order);
     if(!['paid','confirmed','picking'].includes(order.status))throw new DomainError(409,'Order is not available for dispatch');
@@ -246,7 +264,7 @@ export class Commerce {
     this.event(session,'ORDER_CANCELLED',id);return clone(order);
   });}
   async receiveCancellationReturn(session,id,body){return this.serialized(()=>{
-    this.permit(session,'warehouse.fulfill');
+    this.permit(session,'warehouse.cancellation');
     const order=this.orders.get(id);
     if(!order)throw new DomainError(404,'Order not found');
     const pending=order.cancellationReturn;
@@ -279,7 +297,7 @@ export class Commerce {
     return this.warehouseOrder(session,id);
   });}
   async markDelivered(session,id){return this.serialized(()=>{
-    this.permit(session,'warehouse.fulfill');
+    this.permit(session,'warehouse.deliver');
     const order=this.orders.get(id);if(!order)throw new DomainError(404,'Order not found');
     if(order.status==='delivered')return clone(order);
     if(order.status!=='shipped')throw new DomainError(409,'Only dispatched orders can be marked delivered');
@@ -288,7 +306,7 @@ export class Commerce {
     this.event(session,'MOCK_DELIVERED',id);return clone(order);
   });}
   async receiveOrderReturn(session,id,body){return this.serialized(()=>{
-    this.permit(session,'warehouse.fulfill');
+    this.permit(session,'warehouse.receive');
     const order=this.orders.get(id);if(!order)throw new DomainError(404,'Order not found');
     const request=(order.returnRequests||[order.returnRequest].filter(Boolean)).find(r=>r.sku===body.sku);
     if(!request||request.status!=='approved')throw new DomainError(409,'Admin approval is required before receiving a return.');
@@ -318,7 +336,7 @@ export class Commerce {
     this.event(session,routine?'RETURN_REQUESTED':'DELIVERY_ISSUE_REPORTED',id);return clone(order);
   });}
   permit(session,permission) {
-    if(!this.roles[session.role]?.some(p=>p==='*'||p===permission))throw new DomainError(403,'Permission required: '+permission);
+    if(!effectivePermissions(session.role,this.roles[session.role]).includes(permission))throw new DomainError(403,'Permission required: '+permission);
   }
   event(session,type,id){this.audit.push({type,id,actor:session.userId||session.role,at:new Date().toISOString()});}
   catalogCategories(){
@@ -329,7 +347,7 @@ export class Commerce {
     ])].sort((a,b)=>a.localeCompare(b));
   }
   async addCatalogCategory(session,input){return this.serialized(()=>{
-    if(session.role!=='superadmin')throw new DomainError(403,'Super Admin access required');
+    this.permit(session,'categories.manage');
     const name=typeof input?.name==='string'?input.name.trim().replace(/\s+/g,' '):'';
     if(!name||name.length>80)throw new DomainError(400,'Enter a category name of up to 80 characters.');
     if(this.catalogCategories().some(category=>category.toLowerCase()===name.toLowerCase()))throw new DomainError(409,'This category already exists.');
@@ -338,7 +356,7 @@ export class Commerce {
     return this.catalogCategories();
   });}
   async updateCatalogCategory(session,{name,action}){return this.serialized(()=>{
-    if(session.role!=='superadmin')throw new DomainError(403,'Super Admin access required');
+    this.permit(session,'categories.manage');
     if(!this.catalogCategories().includes(name))throw new DomainError(404,'Category not found');
     if(action==='remove'){
       if(this.products.some(product=>product.category===name)||Object.values(this.drafts).some(draft=>draft.product.category===name)){
@@ -448,19 +466,32 @@ export class Commerce {
   });}
   async saveUser(session,body){return this.serialized(()=>{
     this.permit(session,'users.manage');if(session.role!=='superadmin')throw new DomainError(403,'Super Admin required');
-    if(!/^[a-z0-9-]{1,60}$/.test(body.id)||!body.name?.trim()||!this.roles[body.role]||typeof body.active!=='boolean'||!this.locations.some(l=>l.id===body.locationId))throw new DomainError(400,'Valid user ID, name, role, active flag and location required');
+    if(!/^[a-z0-9-]{1,60}$/.test(body.id)||!body.name?.trim()||!Object.hasOwn(this.roles,body.role)||typeof body.active!=='boolean'||!this.locations.some(l=>l.id===body.locationId))throw new DomainError(400,'Valid user ID, name, role, active flag and location required');
     if(body.id===session.userId&&(body.role!=='superadmin'||!body.active))throw new DomainError(409,'Cannot revoke your own Super Admin access');
-    const user={id:body.id,name:body.name.slice(0,100),role:body.role,active:body.active,locationId:body.locationId};const i=this.users.findIndex(u=>u.id===user.id);if(i<0)this.users.push(user);else this.users[i]=user;
-    this.event(session,'USER_SAVED',user.id);return user;
+    const index=this.users.findIndex(user=>user.id===body.id);
+    let pinCredential=this.users[index]?.pinCredential;
+    if(body.pin){
+      if(typeof body.pin!=='string'||!/^\d{6,12}$/.test(body.pin))throw new DomainError(400,'Use a staff PIN with 6–12 digits');
+      const salt=randomBytes(16).toString('hex');
+      pinCredential={salt,hash:scryptSync(body.pin,salt,32).toString('hex')};
+    }
+    if(index<0&&!pinCredential)throw new DomainError(400,'Set a PIN when creating a staff account');
+    const user={id:body.id,name:body.name.slice(0,100),role:body.role,active:body.active,locationId:body.locationId};
+    const stored=pinCredential?{...user,pinCredential}:user;
+    if(index<0)this.users.push(stored);else this.users[index]=stored;
+    if(body.pin)for(const [token,active] of this.sessions)if(active.userId===user.id)this.sessions.delete(token);
+    this.event(session,'USER_SAVED',user.id);
+    Object.assign(this.audit.at(-1),{assignedRole:user.role,locationId:user.locationId,active:user.active});return user;
   });}
   async saveRole(session,body){return this.serialized(()=>{
     this.permit(session,'users.manage');if(session.role!=='superadmin')throw new DomainError(403,'Super Admin required');
-    const allowed=['catalog.edit','catalog.submit','inventory.read','pos.sell','warehouse.fulfill','website.manage','offers.manage','rewards.manage'];
+    const allowed=staffPermissions.filter(permission=>!reservedPermissions.includes(permission));
     if(['constructor','prototype'].includes(body.name)||!/^[a-z][a-z0-9-]{1,40}$/.test(body.name)||body.name==='superadmin'||!Array.isArray(body.permissions)||body.permissions.some(p=>!allowed.includes(p)))throw new DomainError(400,'Invalid role or permissions');
-    this.roles[body.name]=[...new Set(body.permissions)];this.event(session,'ROLE_SAVED',body.name);return this.roles;
+    this.roles[body.name]=[...new Set(body.permissions)];this.event(session,'ROLE_SAVED',body.name);
+    this.audit.at(-1).permissions=[...this.roles[body.name]];return this.roles;
   });}
   async receiveStock(session,body){return this.serialized(()=>{
-    this.permit(session,'inventory.adjust');const {sku,locationId,qty,key,reason}=body;
+    this.permit(session,'inventory.receive');const {sku,locationId,qty,key,reason}=body;
     if(typeof key!=='string'||key.length<6||!Number.isSafeInteger(qty)||qty<1||qty>100000||!this.locations.some(l=>l.id===locationId)||typeof reason!=='string'||!reason.trim())throw new DomainError(400,'Receipt requires SKU, location, positive quantity, reason and idempotency key');
     this.product(sku);const fingerprint=JSON.stringify({sku,locationId,qty,reason});const previous=this.getIdempotent('receipt:'+key,fingerprint);if(previous)return previous;
     const before=this.stock[sku][locationId]||0;const after=before+qty;if(after>2147483647)throw new DomainError(400,'Stock balance too large');this.stock[sku][locationId]=after;
@@ -468,7 +499,7 @@ export class Commerce {
     const result={sku,locationId,qty,after};this.setIdempotent('receipt:'+key,fingerprint,result);return result;
   });}
   async moveStock(session,body){return this.serialized(()=>{
-    this.permit(session,'inventory.adjust');const {sku,from,to,qty,key}=body;
+    this.permit(session,'inventory.transfer');const {sku,from,to,qty,key}=body;
     if(!key||typeof key!=='string'||key.length<6)throw new DomainError(400,'Idempotency key required');
     const fingerprint=JSON.stringify({sku,from,to,qty});const known=this.getIdempotent('transfer:'+key,fingerprint);if(known)return known;
     if(!Number.isSafeInteger(qty)||qty<1||from===to||![from,to].every(id=>this.locations.some(l=>l.id===id)))throw new DomainError(400,'Valid locations and positive quantity required');

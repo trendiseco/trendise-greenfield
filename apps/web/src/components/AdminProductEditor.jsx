@@ -11,13 +11,13 @@ const variantExamples={sku:'SH-OXF-SKY-M',barcode:'0012345678905',color:'Sky Blu
 const createVariant=()=>({sku:'',barcode:'',color:'',size:'',price:1499});
 export const createProductDraft=()=>({name:'',category:'',description:'',fabric:'',fit:'',images:[],variants:[createVariant()]});
 
-export function AdminProductList({catalog,onCreate,onEdit,hidden}) {
+export function AdminProductList({catalog,onCreate,onEdit,hidden,canCreate}) {
  const publishedIds=new Set(catalog.products.map(product=>product.id));
  const unpublished=Object.values(catalog.drafts)
   .map(draft=>draft.product)
   .filter(product=>!publishedIds.has(product.id));
  return <section className="staff-panel" id="admin-products" hidden={hidden}>
-  <div className="panel-heading"><h2>Products</h2><button onClick={onCreate}>Create product</button></div>
+  <div className="panel-heading"><h2>Products</h2>{canCreate&&<button onClick={onCreate}>Create product</button>}</div>
   {[...catalog.products,...unpublished].map(product=><div className="m02-row" key={product.id}>
    <strong>{product.name}<small style={{display:'block',fontWeight:400}}>Product ID: {product.id}</small></strong>
    <span>{catalog.drafts[product.id]?.status||'published'} · {product.variants.length} variants</span>
@@ -50,7 +50,7 @@ async function validateCutout(image) {
  }
 }
 
-export default function AdminProductEditor({catalog,editor,onChange,preview,onPreview,post,onSaved,onClose,productBusy,setProductBusy,saving}) {
+export default function AdminProductEditor({catalog,editor,onChange,preview,onPreview,post,onSaved,onClose,productBusy,setProductBusy,saving,canEdit,canSubmit}) {
  const [productFeedback,setProductFeedback]=useState(null);
  const [productAction,setProductAction]=useState('');
  const productResult=key=>productAction===key&&<ActionFeedback error={productFeedback?.error?productFeedback.message:''} success={!productFeedback?.error?productFeedback?.message:''} pending={productBusy}/>;
@@ -143,7 +143,7 @@ export default function AdminProductEditor({catalog,editor,onChange,preview,onPr
  <button onClick={()=>onChange({...editor,variants:[...editor.variants,createVariant()]})}>Add variant</button>
  <SizeChartEditor product={editor} onChange={sizeChart=>onChange({...editor,sizeChart})}/>
  <div className="button-row">
-  <div><button className="button button-dark" onClick={()=>runProduct('save','Saving draft…','Unable to save draft',async()=>{
+  <div><button className="button button-dark" disabled={!canEdit} onClick={()=>runProduct('save','Saving draft…','Unable to save draft',async()=>{
    if(!editor.category)throw new Error('Select a product category.');
    const draft=await post('/api/admin/products',editor);
    onChange({...draft.product,revision:draft.revision});
@@ -152,7 +152,7 @@ export default function AdminProductEditor({catalog,editor,onChange,preview,onPr
    await onSaved();
   })}>Save draft</button>{productResult('save')}</div>
   <button onClick={()=>onPreview(structuredClone(editor))}>Preview</button>
-  <div><button onClick={()=>runProduct('submit','Submitting draft…','Unable to submit draft',async()=>{
+  <div><button disabled={!canSubmit} onClick={()=>runProduct('submit','Submitting draft…','Unable to submit draft',async()=>{
    if(!editor.revision)throw new Error('Save the draft first, then open Preview.');
    if(!preview||JSON.stringify(preview)!==JSON.stringify(editor))throw new Error('Open Preview for the current draft before submitting.');
    await post(`/api/admin/products/${editor.id}/submit`,{revision:editor.revision});

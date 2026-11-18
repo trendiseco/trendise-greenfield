@@ -5,7 +5,7 @@ import {api,cash} from '../lib/api';
 
 const posColumns=['SKU','Barcode','Product','Category','Colour','Size','Active','Warehouse units','Store units','Website price','Store base price','POS scan price'];
 
-export default function PosPromotions({token,online=false}) {
+export default function PosPromotions({token,online=false,canImport=true,canPromote=true}) {
  const label=online?'Website':'Store POS';
  const endpoint='/api/admin/'+(online?'website':'pos');
  const sheetName=label+' prices';
@@ -91,12 +91,12 @@ export default function PosPromotions({token,online=false}) {
    <label>Promotion<select value={type} onChange={event=>setType(event.target.value)}><option value="none">Clear promotion</option><option value="percent">Percentage off</option><option value="fixed">Flat final price (₹)</option></select></label>
    {type!=='none'&&<label>{type==='percent'?'Discount %':'Final price (₹)'}<input required type="number" min=".01" step=".01" value={value} placeholder={type==='percent'?'e.g. 15':'e.g. 1299'} onChange={event=>setValue(event.target.value)}/></label>}
    {scope==='variant'&&target&&<p>Regular price {cash(variants[target]?.regularPrice)} · Current selling price {cash(variants[target]?.salePrice)}</p>}
-   <button disabled={busy||(!target&&scope!=='all')}>Save promotion</button>{feedback('promotion')}
+   <button disabled={busy||!canPromote||(!target&&scope!=='all')}>Save promotion</button>{feedback('promotion')}
   </form>
   <h3>Bulk pricing in Excel</h3>
   <p>{online?'Edit Website offer price and upload the workbook. The regular price clears the offer. Existing coupons apply to the offer subtotal.':'Edit the POS scan price column and upload the workbook. Changed prices become the store price and clear any promotion on those rows.'}</p>
   <button disabled={busy||!entries.length} onClick={download}>Download stock workbook</button>{feedback('download')}
-  <label>Upload updated prices<input disabled={busy} type="file" accept=".xlsx" onChange={upload}/></label>
+  <label>Upload updated prices<input disabled={busy||!canImport} type="file" accept=".xlsx" onChange={upload}/></label>
   {feedback('upload')}{!action&&<ActionFeedback error={error}/>}
  </section>;
 }

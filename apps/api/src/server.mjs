@@ -76,7 +76,16 @@ const handle=async (req,res)=>{
     if(is('POST','/api/auth/request-otp')){const b=await bodyOf(req);return respond(res,200,customerOtp?await customerOtp.send(b.phone):core.requestOtp(String(b.phone||'')));}
     if(is('POST','/api/auth/verify-otp')){const b=await bodyOf(req);return respond(res,200,customerOtp?core.issueCustomerSession(await customerOtp.verify(b.phone,String(b.otp||'')),{smsVerified:true}):core.verifyOtp(String(b.phone||''),String(b.otp||'')));}
     if(is('POST','/api/auth/staff')){const b=await bodyOf(req);return respond(res,200,core.staffLogin(String(b.role||''),String(b.pin||''),String(b.userId||b.role||'')));}
-    if(is('GET','/api/me'))return respond(res,200,core.session(tokenFrom(req)));
+    if(is('GET','/api/me')){
+      const session=core.session(tokenFrom(req));
+      return respond(res,200,session.role==='customer'?session:core.staffProfile(session));
+    }
+    if(is('POST','/api/auth/staff/logout')){
+      const token=tokenFrom(req),session=core.session(token);
+      if(!session.userId)throw new DomainError(403,'Staff access required');
+      core.sessions.delete(token);
+      return respond(res,200,{signedOut:true});
+    }
     if(is('POST','/api/checkout/place')){const s=core.session(tokenFrom(req),['customer']);return respond(res,201,await core.placeOrder(s,await bodyOf(req),req.headers['x-idempotency-key']));}
     if(is('POST','/api/checkout/reserve')){const s=core.session(tokenFrom(req),['customer']);return respond(res,201,await core.startCheckout(s,await bodyOf(req)));}
     if(is('POST','/api/payments/mock/confirm')){const s=core.session(tokenFrom(req),['customer']);const b=await bodyOf(req);return respond(res,200,await core.confirmMockPayment(s,String(b.reservationId||''),String(req.headers['x-idempotency-key']||b.idempotencyKey||'')));}
@@ -90,7 +99,7 @@ const handle=async (req,res)=>{
     if(req.method==='POST'&&inspectReturn)return respond(res,200,await core.inspectOrderReturn(core.session(tokenFrom(req)),inspectReturn[1],await bodyOf(req)));
     const delivered=path.match(/^\/api\/warehouse\/orders\/(TRD-\d+)\/delivered$/);
     if(req.method==='POST'&&delivered)return respond(res,200,await core.markDelivered(core.session(tokenFrom(req)),delivered[1]));
-    if(is('GET','/api/orders')){const s=core.session(tokenFrom(req),['customer','warehouse','admin','superadmin']);return respond(res,200,{orders:core.ordersFor(s)});}
+    if(is('GET','/api/orders')){const s=core.session(tokenFrom(req));return respond(res,200,{orders:core.ordersFor(s)});}
     if(is('POST','/api/pos/sales')){const s=core.session(tokenFrom(req));const b=await bodyOf(req);return respond(res,201,await core.completePosSale(s,{...b,idempotencyKey:String(req.headers['x-idempotency-key']||b.idempotencyKey||'')}));}
     if(is('GET','/api/pos/inventory'))return respond(res,200,core.posInventory(core.session(tokenFrom(req))));
     if(is('GET','/api/pos/dashboard'))return respond(res,200,core.posDashboard(core.session(tokenFrom(req)),url.searchParams.get('period')||'today',url.searchParams.get('year')));
@@ -111,13 +120,14 @@ const handle=async (req,res)=>{
     const ship=path.match(/^\/api\/warehouse\/orders\/(TRD-\d+)\/dispatch$/);
     if(req.method==='POST'&&ship){const s=core.session(tokenFrom(req));return respond(res,200,await core.dispatch(s,ship[1]));}
     if(is('POST',ratePath)){
-      const authorize=()=>core.session(tokenFrom(req),['admin','superadmin']);
+      const authorize=()=>core.permit(core.session(tokenFrom(req)),'shipping.rates');
       if(core.unit)await core.unit(authorize,{readOnly:true});else authorize();
       return respond(res,200,await lookupRates(await bodyOf(req)));
     }
     const codExport=path.match(/^\/api\/admin\/shipping\/orders\/(TRD-\d+)$/);
     if(req.method==='POST'&&codExport){
-      const staff=core.session(tokenFrom(req),['admin','superadmin']);
+      const staff=core.session(tokenFrom(req));
+      core.permit(staff,'shipping.export');
       const order=core.orders.get(codExport[1]);
       if(!order)throw new DomainError(404,'Order not found');
       if(order.shiprocketOrder)return respond(res,200,order.shiprocketOrder);
@@ -143,32 +153,39 @@ const handle=async (req,res)=>{
       const orderReview=path.match(/^\/api\/admin\/orders\/(TRD-\d+)\/review$/);
       if(req.method==='POST'&&orderReview)return respond(res,200,await core.reviewOrderCase(staff,orderReview[1],await bodyOf(req)));
 
-      if(is('GET','/api/admin/website')){core.permit(staff,'website.manage');core.ensureWebsite();return respond(res,200,{published:core.website.site,draft:core.website.siteDraft,media:Object.entries(core.website.media).map(([id,m])=>({url:'/api/media/'+id,name:m.name,mime:m.mime}))});}
+      if(is('GET','/api/admin/website')){core.permit(staff,'website.read');core.ensureWebsite();return respond(res,200,{published:core.website.site,draft:core.website.siteDraft,media:Object.entries(core.website.media).map(([id,m])=>({url:'/api/media/'+id,name:m.name,mime:m.mime}))});}
       if(is('POST','/api/admin/website'))return respond(res,200,await core.saveWebsite(staff,await bodyOf(req)));
       if(is('POST','/api/admin/website/publish'))return respond(res,200,await core.publishWebsite(staff,await bodyOf(req)));
       if(is('POST','/api/admin/media'))return respond(res,201,await core.uploadMedia(staff,await bodyOf(req)));
-      if(is('GET','/api/admin/offers')){core.permit(staff,'offers.manage');core.ensureWebsite();return respond(res,200,{coupons:core.website.coupons,uses:core.website.couponUses});}
+      if(is('GET','/api/admin/offers')){core.permit(staff,'offers.read');core.ensureWebsite();return respond(res,200,{coupons:core.website.coupons,uses:core.website.couponUses});}
       if(is('POST','/api/admin/offers'))return respond(res,200,await core.saveCoupon(staff,await bodyOf(req)));
-      if(is('GET','/api/admin/rewards')){core.permit(staff,'rewards.manage');core.ensureWebsite();return respond(res,200,{rules:core.website.rules,customers:Object.values(core.website.customers),ledger:core.website.rewardLedger.slice(-100).reverse()});}
+      if(is('GET','/api/admin/rewards')){core.permit(staff,'rewards.read');core.ensureWebsite();return respond(res,200,{rules:core.website.rules,customers:Object.values(core.website.customers),ledger:core.website.rewardLedger.slice(-100).reverse()});}
       if(is('POST','/api/admin/rewards'))return respond(res,200,await core.saveRewardRules(staff,await bodyOf(req)));
       if(is('POST','/api/admin/rewards/customer'))return respond(res,200,await core.adjustCustomer(staff,await bodyOf(req)));
-      if(is('GET','/api/admin/catalog')){core.permit(staff,'catalog.edit');return respond(res,200,{products:core.products,drafts:core.drafts,approvals:core.approvals,categories:core.catalogCategories(),hiddenCategories:core.hiddenCategories});}
+      if(is('GET','/api/admin/catalog')){core.permit(staff,'catalog.read');return respond(res,200,{products:core.products,drafts:core.drafts,approvals:core.approvals,categories:core.catalogCategories(),hiddenCategories:core.hiddenCategories});}
       if(is('POST','/api/admin/categories/update'))return respond(res,200,await core.updateCatalogCategory(staff,await bodyOf(req)));
       if(is('POST','/api/admin/categories'))return respond(res,201,{categories:await core.addCatalogCategory(staff,await bodyOf(req))});
       if(is('POST','/api/admin/products'))return respond(res,200,await core.saveDraft(staff,await bodyOf(req)));
       const action=path.match(/^\/api\/admin\/products\/([^/]+)\/(submit|decide)$/);
       if(req.method==='POST'&&action){const b=await bodyOf(req);return respond(res,200,action[2]==='submit'?await core.submitDraft(staff,action[1],b.revision):await core.decideDraft(staff,action[1],b));}
-      if(is('GET','/api/admin/access')){core.permit(staff,'users.manage');return respond(res,200,{users:core.users,roles:core.roles});}
+      if(is('GET','/api/admin/access')){
+        core.permit(staff,'users.manage');
+        return respond(res,200,{users:core.users.map(({pinCredential,...user})=>user),roles:core.roles,locations:core.locations});
+      }
+      if(is('GET','/api/admin/audit')){
+        core.permit(staff,'audit.read');
+        return respond(res,200,{entries:core.audit.slice(-100).reverse()});
+      }
       if(is('POST','/api/admin/users'))return respond(res,200,await core.saveUser(staff,await bodyOf(req)));
       if(is('POST','/api/admin/roles'))return respond(res,200,await core.saveRole(staff,await bodyOf(req)));
       if(is('GET','/api/admin/inventory')){core.permit(staff,'inventory.read');return respond(res,200,{stock:core.stock,locations:core.locations,ledger:core.ledger.slice(-100)});}
       if(is('POST','/api/admin/inventory/receive'))return respond(res,200,await core.receiveStock(staff,await bodyOf(req)));
       if(is('POST','/api/admin/inventory/transfer'))return respond(res,200,await core.moveStock(staff,await bodyOf(req)));
-    }
-    if(is('GET','/api/admin/summary')){core.session(tokenFrom(req),['admin','superadmin']);const period=url.searchParams.get('period');
+    if(is('GET','/api/admin/summary')){core.permit(staff,'reports.read');const period=url.searchParams.get('period');
       if(!period)return respond(res,200,adminDashboard(core));
       const pos=core.posDashboard(core.session(tokenFrom(req)),period,null,true);
       return respond(res,200,{...adminDashboard(core,period),pos:{bills:pos.sales.length,customers:pos.customers,gross:pos.gross,refunded:pos.refunded,net:pos.net}});}
+    }
     if(is('POST','/api/tryon/mock')){core.session(tokenFrom(req),['customer']);const b=await bodyOf(req);if(!b.sku)throw new DomainError(400,'Select a product');core.product(b.sku);return respond(res,200,{status:'mock_only',generatedImage:null,message:'Virtual try-on generation is intentionally disabled in Development. No photos are uploaded to AI providers.'});}
     return respond(res,404,{error:'Endpoint not found',code:'NOT_FOUND'});
   }catch(err){
