@@ -10,7 +10,7 @@ import {orderEligibility,paymentLabels,returnReasons,policyDocument} from '../..
 import {upgradeSizeChart,validateSizeChart} from '../../../shared/size-chart.mjs';
 import {websiteState,websiteMethods} from './website.mjs';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from 'node:crypto';
-import { initialProducts, initialLocations, generateMockStock, policies } from './seed.mjs';
+import { centralWarehouseId, initialProducts, initialLocations, generateMockStock, policies } from './seed.mjs';
 
 import {DomainError} from './errors.mjs';
 export {DomainError} from './errors.mjs';
@@ -54,11 +54,11 @@ export class Commerce {
     try { return await fn(); } finally { release(); }
   }
   product(sku) { for(const p of this.products){const v=p.variants.find(x=>x.sku===sku);if(v)return { product:p,variant:v };}throw new DomainError(404,'Product variant not found','SKU_NOT_FOUND'); }
-  available(sku,locationId='warehouse-hyd') {
+  available(sku) {
     const found=this.product(sku);if(found.variant.active===false)return 0;
     this.expireReservations();
-    const physical=this.stock[sku]?.[locationId]??0;
-    const reserved=[...this.reservations.values()].filter(r=>r.status==='active').reduce((sum,r)=>sum+r.allocations.filter(a=>a.sku===sku&&a.locationId===locationId).reduce((qty,a)=>qty+a.qty,0),0);
+    const physical=this.stock[sku]?.[centralWarehouseId]??0;
+    const reserved=[...this.reservations.values()].filter(r=>r.status==='active').reduce((sum,r)=>sum+r.allocations.filter(a=>a.sku===sku&&a.locationId===centralWarehouseId).reduce((qty,a)=>qty+a.qty,0),0);
     return Math.max(0,physical-reserved);
   }
   expireReservations() {
@@ -116,7 +116,7 @@ export class Commerce {
   allocations(lines){
     return lines.map(({sku,qty})=>{
       if(qty>this.available(sku))throw new DomainError(409,`Not enough warehouse stock for ${sku}`,'INSUFFICIENT_STOCK');
-      return {sku,qty,locationId:'warehouse-hyd'};
+      return {sku,qty,locationId:centralWarehouseId};
     });
   }
   addressCheck(address) {if(!address||typeof address!=='object'||!address.name?.trim()||!address.line1?.trim()||!address.city?.trim()||!address.state?.trim()||!/^\d{6}$/.test(String(address.pincode||'')))throw new DomainError(400,'Enter a complete delivery address and six-digit PIN code');if(!/^[6-9]\d{9}$/.test(String(address.phone||'')))throw new DomainError(400,'Enter a valid contact phone number');}
@@ -321,7 +321,7 @@ export class Commerce {
       if(prior.sellable!==sellable||prior.reason!==reason)throw new DomainError(409,'This order line has already been received.');
       return this.warehouseOrder(session,id);
     }
-    const location=this.locations.find(entry=>entry.id==='warehouse-hyd'&&entry.type==='warehouse');
+    const location=this.locations.find(entry=>entry.id===centralWarehouseId&&entry.type==='warehouse');
     const balances=this.stock[item.sku];
     if(!location||!balances)throw new DomainError(409,'Warehouse stock is unavailable.');
     const before=balances[location.id]??0;
@@ -495,12 +495,12 @@ export class Commerce {
     if(!['publish','reject'].includes(body.action))throw new DomainError(400,'Select publish or reject');
     if(body.action==='publish'){
       const product=this.validateProduct(d.product,id);const index=this.products.findIndex(p=>p.id===id);
-      const warehouse=this.locations.find(l=>l.id==='warehouse-hyd'&&l.type==='warehouse');
+      const warehouse=this.locations.find(l=>l.id===centralWarehouseId&&l.type==='warehouse');
       if(!warehouse&&product.variants.some(v=>v.openingQty))throw new DomainError(409,'Hyderabad Warehouse is required to receive opening stock');
       product.variants=product.variants.map(({openingQty=0,...variant})=>{
         const {sku}=variant;
         if(!this.stock[sku]){
-          this.stock[sku]=Object.fromEntries(this.locations.map(l=>[l.id,0]));
+          this.stock[sku]={[centralWarehouseId]:0};
           if(openingQty){
             this.stock[sku][warehouse.id]=openingQty;
             this.ledger.push({id:randomUUID(),sku,locationId:warehouse.id,delta:openingQty,before:0,after:openingQty,reason:'PRODUCT_OPENING_STOCK',ref:id,at:new Date().toISOString()});
@@ -542,24 +542,12 @@ export class Commerce {
     this.audit.at(-1).permissions=[...this.roles[body.name]];return this.roles;
   });}
   async receiveStock(session,body){return this.serialized(()=>{
-    this.permit(session,'inventory.receive');const {sku,locationId,qty,key,reason}=body;
-    if(typeof key!=='string'||key.length<6||!Number.isSafeInteger(qty)||qty<1||qty>100000||!this.locations.some(l=>l.id===locationId)||typeof reason!=='string'||!reason.trim())throw new DomainError(400,'Receipt requires SKU, location, positive quantity, reason and idempotency key');
+    this.permit(session,'inventory.receive');const {sku,locationId=centralWarehouseId,qty,key,reason}=body;
+    if(typeof key!=='string'||key.length<6||!Number.isSafeInteger(qty)||qty<1||qty>100000||locationId!==centralWarehouseId||typeof reason!=='string'||!reason.trim())throw new DomainError(400,'Receipt requires a SKU, positive quantity, reason and idempotency key for the central warehouse');
     this.product(sku);const fingerprint=JSON.stringify({sku,locationId,qty,reason});const previous=this.getIdempotent('receipt:'+key,fingerprint);if(previous)return previous;
     const before=this.stock[sku][locationId]||0;const after=before+qty;if(after>2147483647)throw new DomainError(400,'Stock balance too large');this.stock[sku][locationId]=after;
     this.ledger.push({id:randomUUID(),sku,locationId,delta:qty,before,after,reason:'MOCK_RECEIPT: '+reason.slice(0,200),ref:key,at:new Date().toISOString()});this.event(session,'STOCK_RECEIPT',key);
     const result={sku,locationId,qty,after};this.setIdempotent('receipt:'+key,fingerprint,result);return result;
-  });}
-  async moveStock(session,body){return this.serialized(()=>{
-    this.permit(session,'inventory.transfer');const {sku,from,to,qty,key}=body;
-    if(!key||typeof key!=='string'||key.length<6)throw new DomainError(400,'Idempotency key required');
-    const fingerprint=JSON.stringify({sku,from,to,qty});const known=this.getIdempotent('transfer:'+key,fingerprint);if(known)return known;
-    if(!Number.isSafeInteger(qty)||qty<1||from===to||![from,to].every(id=>this.locations.some(l=>l.id===id)))throw new DomainError(400,'Valid locations and positive quantity required');
-    if(this.available(sku,from)<qty)throw new DomainError(409,'Insufficient unreserved source stock');
-    if((this.stock[sku][to]||0)+qty>2147483647)throw new DomainError(400,'Stock balance too large');
-    this.decrement({sku,locationId:from,qty},'TRANSFER_OUT',key);
-    const before=this.stock[sku][to]||0;this.stock[sku][to]=before+qty;
-    this.ledger.push({id:randomUUID(),sku,locationId:to,delta:qty,before,after:before+qty,reason:'TRANSFER_IN',ref:key,at:new Date().toISOString()});
-    this.event(session,'STOCK_TRANSFER',key);const result={sku,from,to,qty};this.setIdempotent('transfer:'+key,fingerprint,result);return result;
   });}
   health(){return {status:'ok',mode:'DEVELOPMENT_MOCK_ONLY',paymentProvider:'MOCK_RAZORPAY',shippingProvider:'MOCK_SHIPROCKET',otpProvider:'MOCK_OTP',mapsProvider:'MOCK_MAP',aiProvider:'MOCK_TRYON',orders:this.orders.size,posSales:this.sales.size};}
 }

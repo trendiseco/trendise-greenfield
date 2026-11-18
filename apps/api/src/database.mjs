@@ -1,3 +1,4 @@
+import {centralWarehouseId} from './seed.mjs';
 import {policyDocument,policyEffectiveDate,policyRulesVersion} from '../../../shared/order-policy.mjs';
 import pg from 'pg';
 import {upgradeSizeChart} from '../../../shared/size-chart.mjs';
@@ -20,6 +21,10 @@ export function restore(commerce, data) {
   for (const key of fields) {
     if (data[key] !== undefined) commerce[key] = data[key];
   }
+  // Fold legacy balances into the same inventory pool used by checkout and POS.
+  commerce.stock=Object.fromEntries(Object.entries(commerce.stock).map(([sku,balances])=>[
+    sku,{[centralWarehouseId]:Object.values(balances).reduce((total,qty)=>total+qty,0)},
+  ]));
   commerce.additionalCategories = data.additionalCategories ?? [];
   commerce.hiddenCategories = data.hiddenCategories ?? [];
   commerce.posPromotions = data.posPromotions ?? {};
@@ -44,6 +49,13 @@ export function restore(commerce, data) {
     draft.product = upgradeSizeChart(draft.product);
   }
   for (const key of maps) commerce[key] = new Map(data[key]);
+  const allocationsToMove=[
+    ...[...commerce.reservations.values()].filter(reservation=>reservation.status==='active'),
+    ...[...commerce.orders.values()].filter(order=>['paid','confirmed','picking'].includes(order.status)),
+  ];
+  for(const entry of allocationsToMove){
+    for(const allocation of entry.allocations??[])allocation.locationId=centralWarehouseId;
+  }
 }
 
 export function poolFor(url = process.env.DATABASE_URL) {
@@ -117,15 +129,16 @@ export class DurableCommerce extends Commerce {
       const result = await client.query('SELECT payload FROM commerce_state WHERE id=1' + lock);
       if (!result.rowCount) throw new Error('Run db:seed before starting API');
 
-      restore(this, result.rows[0].payload);
+      restore(this, readOnly ? result.rows[0].payload : structuredClone(result.rows[0].payload));
       if (!readOnly) previousState = structuredClone(snapshot(this));
 
       const value = await fn();
       if (!readOnly) {
         const nextState = snapshot(this);
-        const projectionsChanged = projectionKeys.some(key => !isDeepStrictEqual(previousState[key], nextState[key]));
+        const storedState = result.rows[0].payload;
+        const projectionsChanged = projectionKeys.some(key => !isDeepStrictEqual(storedState[key], nextState[key]));
         if (projectionsChanged) await rebuildProjections(client, this);
-        if (!isDeepStrictEqual(previousState, nextState)) {
+        if (!isDeepStrictEqual(storedState, nextState)) {
           await client.query('UPDATE commerce_state SET payload=$1,updated_at=now() WHERE id=1', [nextState]);
         }
       }

@@ -35,8 +35,8 @@ test('opening quantities receive each new variant once at warehouse on publicati
  const retry=await c.saveDraft(admin,{...draft.product,revision:draft.revision});
  await c.submitDraft(admin,id,retry.revision);
  await c.decideDraft(superadmin,id,{revision:retry.revision,action:'publish'});
- assert.deepEqual(c.stock['MOCK-M'],{'warehouse-hyd':12,'store-hyd-01':0});
- assert.deepEqual(c.stock['MOCK-L'],{'warehouse-hyd':5,'store-hyd-01':0});
+ assert.deepEqual(c.stock['MOCK-M'],{'warehouse-hyd':12});
+ assert.deepEqual(c.stock['MOCK-L'],{'warehouse-hyd':5});
  assert.equal(c.listing().find(p=>p.id===id).variants[0].openingQty,undefined);
  assert.equal(c.drafts[id].product.variants[0].openingQty,undefined);
  await assert.rejects(c.decideDraft(superadmin,id,{revision:retry.revision,action:'publish'}),{status:409});
@@ -67,14 +67,10 @@ test('RBAC changes and disabled users revoke active session privileges',async()=
  await c.saveUser(superadmin,{...c.users.find(u=>u.id==='admin'),active:false});assert.throws(()=>c.session(login.token),{status:401});
  await assert.rejects(c.saveRole(superadmin,{name:'editor',permissions:['*']}),{status:400});await assert.rejects(c.saveUser(superadmin,{...c.users[1],active:false}),{status:409});
 });
-test('transfers preserve totals, reject oversell, replay safely and protect held stock',async()=>{
- const c=new Commerce(),sku=c.products[0].variants[0].sku;const body={sku,from:'store-hyd-01',to:'warehouse-hyd',qty:4,key:'transfer-one'};
- const results=await Promise.allSettled([c.moveStock(superadmin,body),c.moveStock(superadmin,{...body,key:'transfer-two'})]);assert.equal(results.filter(r=>r.status==='fulfilled').length,1);assert.equal(c.available(sku),10);assert.equal(c.stock[sku]['store-hyd-01'],0);await c.moveStock(superadmin,body);assert.equal(c.ledger.length,2);
- await assert.rejects(c.moveStock(admin,body),{status:403});
-});
 test('newly published product can receive shared mock stock with audited, idempotent receipt',async()=>{
  const c=new Commerce();const d=await c.saveDraft(admin,product());await c.submitDraft(admin,d.product.id,1);await c.decideDraft(superadmin,d.product.id,{revision:1,action:'publish'});
  const body={sku:'MOCK-M',locationId:'warehouse-hyd',qty:8,key:'receipt-test',reason:'Mock opening stock'};await c.receiveStock(superadmin,body);await c.receiveStock(superadmin,body);assert.equal(c.available('MOCK-M'),8);assert.equal(c.ledger.length,1);await assert.rejects(c.receiveStock(admin,body),{status:403});
+ await assert.rejects(c.receiveStock(superadmin,{...body,locationId:'store-hyd-01',key:'store-receipt'}),{status:400});
 });
 
 test('Super Admin creates categories for product drafts and legacy products remain selectable',async()=>{

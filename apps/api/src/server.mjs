@@ -1,3 +1,4 @@
+import {centralBalances} from './warehouse-inventory.mjs';
 import {createHash} from 'node:crypto';
 import {createCustomerOtp} from './customer-otp.mjs';
 import {authorizeShipmentEvent,applyShipmentEvent} from './shipment-events.mjs';
@@ -178,13 +179,12 @@ const handle=async (req,res)=>{
       }
       if(is('POST','/api/admin/users'))return respond(res,200,await core.saveUser(staff,await bodyOf(req)));
       if(is('POST','/api/admin/roles'))return respond(res,200,await core.saveRole(staff,await bodyOf(req)));
-      if(is('GET','/api/admin/inventory')){core.permit(staff,'inventory.read');return respond(res,200,{stock:core.stock,locations:core.locations,ledger:core.ledger.slice(-100)});}
+      if(is('GET','/api/admin/inventory')){core.permit(staff,'inventory.read');return respond(res,200,{stock:centralBalances(core),ledger:core.ledger.slice(-100)});}
       if(is('POST','/api/admin/inventory/receive'))return respond(res,200,await core.receiveStock(staff,await bodyOf(req)));
-      if(is('POST','/api/admin/inventory/transfer'))return respond(res,200,await core.moveStock(staff,await bodyOf(req)));
     if(is('GET','/api/admin/summary')){core.permit(staff,'reports.read');const period=url.searchParams.get('period');
       if(!period)return respond(res,200,adminDashboard(core));
       const pos=core.posDashboard(core.session(tokenFrom(req)),period,null,true);
-      return respond(res,200,{...adminDashboard(core,period),pos:{bills:pos.sales.length,customers:pos.customers,gross:pos.gross,refunded:pos.refunded,net:pos.net}});}
+      return respond(res,200,{...adminDashboard(core,period),pos:{bills:pos.sales.length,customers:pos.customers,gross:pos.gross,refunded:pos.refunded,net:pos.net,recentSales:pos.sales.slice(0,6).map(sale=>({id:sale.id,total:sale.quote.total,method:sale.payment.method})),exchanges:pos.exchanges}});}
     }
     if(is('POST','/api/tryon/mock')){core.session(tokenFrom(req),['customer']);const b=await bodyOf(req);if(!b.sku)throw new DomainError(400,'Select a product');core.product(b.sku);return respond(res,200,{status:'mock_only',generatedImage:null,message:'Virtual try-on generation is intentionally disabled in Development. No photos are uploaded to AI providers.'});}
     return respond(res,404,{error:'Endpoint not found',code:'NOT_FOUND'});

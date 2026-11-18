@@ -3,14 +3,14 @@ import ActionFeedback from './ActionFeedback';
 import {useEffect,useState} from 'react';
 import {api,cash} from '../lib/api';
 
-const posColumns=['SKU','Barcode','Product','Category','Colour','Size','Active','Warehouse units','Store units','Website price','Store base price','POS scan price'];
+const posColumns=['SKU','Barcode','Product','Category','Colour','Size','Active','Central warehouse units','Website price','Store base price','POS scan price'];
 
 export default function PosPromotions({token,online=false,canImport=true,canPromote=true}) {
  const label=online?'Website':'Store POS';
  const endpoint='/api/admin/'+(online?'website':'pos');
  const sheetName=label+' prices';
  const priceColumn=online?'Website offer price':'POS scan price';
- const columns=online?[...posColumns.slice(0,9),'Website regular price','Store base price',priceColumn]:posColumns;
+ const columns=online?[...posColumns.slice(0,8),'Website regular price','Store base price',priceColumn]:posColumns;
  const updateKey=online?'trd_website_prices_updated':'trd_pos_prices_updated';
  const [variants,setVariants]=useState({}),[scope,setScope]=useState('variant'),[target,setTarget]=useState('');
  const [type,setType]=useState('none'),[value,setValue]=useState('');
@@ -47,11 +47,11 @@ export default function PosPromotions({token,online=false,canImport=true,canProm
    sheet.addRow(columns);
    sheet.getRow(1).font={bold:true};
    sheet.views=[{state:'frozen',ySplit:1}];
-   sheet.autoFilter='A1:L1';
+   sheet.autoFilter={from:{row:1,column:1},to:{row:1,column:columns.length}};
    columns.forEach((label,index)=>{sheet.getColumn(index+1).width=Math.max(14,label.length+3);});
    sheet.getColumn(2).numFmt='@';
    for(const [sku,entry] of entries)sheet.addRow([sku,entry.barcode,entry.name,entry.category,entry.color,entry.size,
-    entry.active?'Yes':'No',entry.stock?.['warehouse-hyd']??0,entry.stock?.['store-hyd-01']??0,
+    entry.active?'Yes':'No',entry.onHand,
     entry.websitePrice,online?entry.storePrice:entry.regularPrice,entry.salePrice]);
    const url=URL.createObjectURL(new Blob([await book.xlsx.writeBuffer()],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
    const link=document.createElement('a');link.href=url;link.download=online?'trendise-website-prices.xlsx':'trendise-store-pos-prices.xlsx';link.click();

@@ -1,3 +1,4 @@
+import {centralWarehouseId} from './seed.mjs';
 import {posExchangeTerms,returnMs} from '../../../shared/order-policy.mjs';
 import {randomUUID} from 'node:crypto';
 import {DomainError} from './errors.mjs';
@@ -52,7 +53,7 @@ export const posMethods = {
         ...variant, ...this.posPricing(variant)
       }))
     }));
-    return {products, locationId: location.id, locationName: location.name, stock: this.stock};
+    return {products, locationId: location.id, locationName: location.name};
   },
 
   posQuote(lines, priceFor = variant => this.posPricing(variant)) {
@@ -77,7 +78,7 @@ export const posMethods = {
     return Object.fromEntries(this.products.flatMap(product => product.variants.map(variant => [
       variant.sku, {productId:product.id, name:product.name, category:product.category, barcode:variant.barcode,
         color:variant.color, size:variant.size, active:variant.active!==false, websitePrice:variant.price, storePrice:variant.posPrice??variant.price,
-        stock:this.stock[variant.sku], ...this.posPricing(variant), rule:this.posPromotions[variant.sku] ?? null}
+        onHand:this.stock[variant.sku]?.[centralWarehouseId]??0, ...this.posPricing(variant), rule:this.posPromotions[variant.sku] ?? null}
     ])));
   },
 
@@ -157,7 +158,7 @@ export const posMethods = {
     const refunded=exchanges.reduce((sum,entry)=>sum+cents(entry.refund??0),0);
     const exchangePayments=exchanges.reduce((sum,entry)=>sum+cents(entry.payment?.amount??0),0);
     return {sales, years, currentYear, gross:rupees(gross+exchangePayments), refunded:rupees(refunded),
-      net:rupees(gross+exchangePayments-refunded),
+      net:rupees(gross+exchangePayments-refunded),exchanges:exchanges.filter(entry=>entry.status==='exchanged').length,
       customers: new Set(sales.map(sale => sale.customer?.phone).filter(Boolean)).size};
   },
 
@@ -260,7 +261,7 @@ export const posMethods = {
         throw new DomainError(400,'Select the simulated payment method for the difference.');
       }
       if(body.sellable!==true)throw new DomainError(400,'Confirm the garment is sellable before restocking');
-      const warehouse = this.locations.find(entry => entry.id === 'warehouse-hyd' && entry.type === 'warehouse');
+      const warehouse = this.locations.find(entry => entry.id === centralWarehouseId && entry.type === 'warehouse');
       if (!warehouse) throw new DomainError(409, 'Exchange warehouse is unavailable');
       const balances = this.stock[item.sku];
       const before = balances[warehouse.id] || 0;

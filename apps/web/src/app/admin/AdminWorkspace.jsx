@@ -44,8 +44,7 @@ export default function AdminWorkspace({defaultSection='admin-dashboard'}) {
  const [preview,setPreview]=useState(null);
  const [access,setAccess]=useState(null);
  const [inventory,setInventory]=useState(null);
- const [receipt,setReceipt]=useState({sku:'',locationId:'warehouse-hyd',qty:1,reason:'Fictional opening stock'});
- const [transfer,setTransfer]=useState({sku:'',from:'warehouse-hyd',to:'store-hyd-01',qty:1});
+ const [receipt,setReceipt]=useState({sku:'',qty:1,reason:'Fictional opening stock'});
  const [period,setPeriod]=useState('today'),[filteredSummary,setFilteredSummary]=useState(null);
  useEffect(()=>{
   if(!token||!summary)return;
@@ -153,5 +152,28 @@ export default function AdminWorkspace({defaultSection='admin-dashboard'}) {
  </section>}
  {can('approvals.decide')&&<section className="staff-panel operations-pane" hidden={section!=='admin-approvals'} id="admin-approvals"><h2>Approval queue</h2>{Object.values(catalog.drafts).filter(d=>d.status==='pending').map(d=><div className="m02-row" key={d.product.id}><span>{d.product.name} · revision {d.revision} · submitted by {d.submittedBy}</span><button onClick={()=>{setEditor({...structuredClone(d.product),revision:d.revision});setPreview(structuredClone(d.product));openSection('admin-products');}}>Inspect</button>{['publish','reject'].map(action=><div key={action}><button disabled={!!saving} onClick={()=>runSave('approval:'+d.product.id+':'+action,action==='publish'?'Publishing product…':'Rejecting submission…',async()=>{await post(`/api/admin/products/${d.product.id}/decide`,{revision:d.revision,action});await refresh();setNotice(action==='publish'?'Product published.':'Submission rejected and returned to drafts.');})}>{action}</button>{feedback('approval:'+d.product.id+':'+action)}</div>)}</div>)}{notice&&feedbackAt.startsWith('approval:')&&<ActionFeedback success={notice}/>}<h3>Decision history</h3>{catalog.approvals.slice(-10).reverse().map((a,i)=><p key={i}>{a.id} · revision {a.revision} · {a.action} by {a.actor}</p>)}</section>}
  {section==='admin-staff'&&access&&<StaffAccessEditor access={access} token={token} save={saveAccess} feedback={feedback} busy={!!saving}/>}
- <section className="staff-panel operations-pane" hidden={section!=='admin-inventory'} id="admin-inventory"><h2>Shared inventory</h2><p>Website and Store POS sales use the Hyderabad Warehouse balance. Other locations show their recorded physical stock.</p><div className="m02-scroll"><table><thead><tr><th>SKU</th>{inventory?.locations.map(l=><th key={l.id}>{l.name}</th>)}</tr></thead><tbody>{Object.entries(inventory?.stock||{}).map(([sku,balances])=><tr key={sku}><td>{sku}</td>{inventory.locations.map(l=><td key={l.id}>{balances[l.id]||0}</td>)}</tr>)}</tbody></table></div>{can('inventory.receive')&&<><h3>Receive fictional stock</h3><div className="m02-grid"><label>SKU<select value={receipt.sku} onChange={e=>setReceipt({...receipt,sku:e.target.value})}><option value="">Choose variant</option>{Object.keys(inventory?.stock||{}).map(s=><option key={s}>{s}</option>)}</select></label><label>Location<select value={receipt.locationId} onChange={e=>setReceipt({...receipt,locationId:e.target.value})}>{inventory?.locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label><label>Quantity<input type="number" min="1" value={receipt.qty} placeholder="e.g. 12" onChange={e=>setReceipt({...receipt,qty:Number(e.target.value)})}/></label><label>Reason<input value={receipt.reason} placeholder="e.g. Supplier delivery received" onChange={e=>setReceipt({...receipt,reason:e.target.value})}/></label></div><button disabled={!!saving} onClick={()=>runSave('receive','Receiving stock…',async()=>{await post('/api/admin/inventory/receive',{...receipt,key:uniqueKey()});await refresh();setNotice('Mock stock received.');})}>Receive mock stock</button>{feedback('receive')}</>}{can('inventory.transfer')&&<><h3>Transfer unreserved stock</h3><div className="m02-grid"><label>SKU<select value={transfer.sku} onChange={e=>setTransfer({...transfer,sku:e.target.value})}><option value="">Choose variant</option>{Object.keys(inventory?.stock||{}).map(s=><option key={s}>{s}</option>)}</select></label>{['from','to'].map(k=><label key={k}>{k}<select value={transfer[k]} onChange={e=>setTransfer({...transfer,[k]:e.target.value})}>{inventory?.locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}</select></label>)}<label>Quantity<input type="number" min="1" value={transfer.qty} placeholder="e.g. 3" onChange={e=>setTransfer({...transfer,qty:Number(e.target.value)})}/></label></div><button disabled={!!saving} onClick={()=>runSave('transfer','Transferring stock…',async()=>{await post('/api/admin/inventory/transfer',{...transfer,key:uniqueKey()});localStorage.setItem('trd_stock_transferred',String(Date.now()));await refresh();setNotice('Stock transferred.');})}>Transfer</button>{feedback('transfer')}</>}<h3>Recent stock movements</h3>{inventory?.ledger.slice(-10).reverse().map(l=><p key={l.id}>{l.sku} · {l.locationId} · {l.delta} · {l.reason}</p>)}</section></main>;
+ <section className="staff-panel operations-pane" hidden={section!=='admin-inventory'} id="admin-inventory">
+  <h2>Central warehouse inventory</h2>
+  <p>Customer website and Store POS sales draw from this shared stock.</p>
+  {inventory&&<div className="m02-scroll"><table>
+   <thead><tr><th>SKU</th><th>On hand</th><th>Reserved</th><th>Available</th></tr></thead>
+   <tbody>{Object.entries(inventory.stock).map(([sku,balance])=><tr key={sku}><td>{sku}</td><td>{balance.onHand}</td><td>{balance.reserved}</td><td>{balance.available}</td></tr>)}</tbody>
+  </table></div>}
+  {can('inventory.receive')&&<>
+   <h3>Receive mock stock</h3>
+   <div className="m02-grid">
+    <label>SKU<select value={receipt.sku} onChange={e=>setReceipt({...receipt,sku:e.target.value})}><option value="">Choose variant</option>{Object.keys(inventory?.stock||{}).map(s=><option key={s}>{s}</option>)}</select></label>
+    <label>Quantity<input type="number" min="1" value={receipt.qty} placeholder="e.g. 12" onChange={e=>setReceipt({...receipt,qty:Number(e.target.value)})}/></label>
+    <label>Reason<input value={receipt.reason} placeholder="e.g. Supplier delivery received" onChange={e=>setReceipt({...receipt,reason:e.target.value})}/></label>
+   </div>
+   <button disabled={!!saving||!receipt.sku} onClick={()=>runSave('receive','Receiving stock…',async()=>{
+    await post('/api/admin/inventory/receive',{...receipt,key:uniqueKey()});
+    localStorage.setItem('trd_stock_updated',String(Date.now()));
+    await refresh();
+    setNotice('Mock stock received into the central warehouse.');
+   })}>Receive mock stock</button>{feedback('receive')}
+  </>}
+  <h3>Recent stock movements</h3>
+  {inventory?.ledger.slice(-10).reverse().map(l=><p key={l.id}>{l.sku} · {l.delta} · {l.reason}</p>)}
+ </section></main>;
 }

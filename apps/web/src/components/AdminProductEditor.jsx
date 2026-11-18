@@ -121,7 +121,7 @@ export default function AdminProductEditor({catalog,editor,onChange,preview,onPr
    <label>View label<input value={im.label||''} placeholder="e.g. Front view" onChange={e=>updateImage(i,{label:e.target.value})}/></label>
    <button onClick={()=>onChange({...editor,images:editor.images.filter((_,n)=>n!==i)})}>Remove image</button></div>)}</div>
  <h3>Variants · barcode is mandatory for every size and color</h3><p className="hint">Leave Store POS Price blank to use the website price. Click the barcode field for the matching size and color, then scan the printed tag with a USB or Bluetooth scanner in keyboard mode. You can also type or paste the barcode value.</p>
- <p className="hint">Enter the opening quantity for each new size and color. Blank means 0 pieces. On publication, stock is added to Hyderabad Warehouse and is available to both the customer website and Store POS. Use Inventory for later stock receipts or to record physical transfers.</p>
+ <p className="hint">Enter the opening quantity for each new size and color. Blank means 0 pieces. On publication, stock is added to Hyderabad Warehouse and is available to both the customer website and Store POS. Use Inventory for later stock receipts.</p>
  {editor.variants.map((v,i)=>{
   const published=catalog.products.some(p=>p.id===editor.id&&p.variants.some(x=>x.sku===v.sku));
   const updateVariant=patch=>onChange({...editor,variants:editor.variants.map((variant,index)=>index===i?{...variant,...patch}:variant)});

@@ -91,7 +91,7 @@ test('exchange inspection creates one replacement and isolates failed stock',asy
  assert.equal(replacement.quote.total,0);
  assert.equal(replacement.payment.status,'no_payment_due');
  assert.equal(replacement.items[0].sku,c.products[0].variants[2].sku);
- assert.equal(c.available(replacement.items[0].sku),5);
+ assert.equal(c.available(replacement.items[0].sku),replacementStock-1);
  assert.ok(c.warehouseQueue(warehouse).some(row=>row.id===replacement.id));
  assert.equal(c.customer(customer).points,100-order.quote.redeemPoints+order.quote.earnPoints);
  assert.equal(c.available(first.sku),firstStock+1);

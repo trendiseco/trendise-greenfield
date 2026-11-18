@@ -23,7 +23,6 @@ test('store billing preserves prices, GST, customer history and exact restock ac
  await assert.rejects(app.completePosSale(cashier,body),{status:400});
  body.customer = {name:'Example Customer',phone:'+91 98765 43210'};
  await assert.rejects(app.completePosSale(cashier,{...body,expectedTotal:3701}),{status:409});
- const storeBefore = app.stock[sku]['store-hyd-01'];
  const warehouseBefore = app.stock[sku]['warehouse-hyd'];
  const {sale} = await app.completePosSale(cashier,body);
  assert.equal(sale.customer.phone,'9876543210');
@@ -32,7 +31,7 @@ test('store billing preserves prices, GST, customer history and exact restock ac
  assert.equal(sale.quote.taxable,3523.81);
  assert.ok(sale.terms.length);
  assert.deepEqual(await app.completePosSale(cashier,body),{sale,message:'Demo sale completed. No payment collected.'});
- assert.equal(app.stock[sku]['store-hyd-01'],storeBefore);
+ assert.deepEqual(app.stock[sku],{'warehouse-hyd':warehouseBefore-2});
 
  const reloaded = new Commerce();
  restore(reloaded,structuredClone(snapshot(app)));
@@ -55,7 +54,7 @@ test('store billing preserves prices, GST, customer history and exact restock ac
  assert.deepEqual(await reloaded.returnPosItem(cashier,sale.id,input,'return-part-one'),first);
  const last = await reloaded.returnPosItem(cashier,sale.id,input,'return-part-two');
  assert.equal(last.return.status,'exchanged');
- assert.equal(reloaded.available(second.sku),3);
+ assert.equal(reloaded.available(second.sku),7);
  assert.equal(reloaded.stock[sku]['warehouse-hyd'],warehouseBefore);
  await assert.rejects(reloaded.returnPosItem(cashier,sale.id,input,'return-too-many'),{status:409});
  for (const period of ['today','week','month','year']) {
@@ -162,7 +161,7 @@ test('POS checks the original product before quoting and recording an alternate 
  assert.deepEqual(completed.return.payment,{method:'Cash',status:'simulated',amount:99});
  assert.deepEqual(await call(paid,'pos-alternate-paid'),completed);
  assert.equal(c.available(item.sku),1);
- assert.equal(c.available(lowerPrice.sku),5);
- assert.equal(c.available(addOn.sku),5);
+ assert.equal(c.available(lowerPrice.sku),9);
+ assert.equal(c.available(addOn.sku),9);
  assert.equal(c.posDashboard(cashier,'today').net,1598);
 });

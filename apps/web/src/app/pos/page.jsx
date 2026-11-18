@@ -88,7 +88,7 @@ function Pos(){
     await refresh(token,controller.signal);
    } finally{pending=false;}
   };
-  const onStorage=event=>{if(['trd_categories_updated','trd_pos_prices_updated','trd_stock_transferred'].includes(event.key))update();};
+  const onStorage=event=>{if(['trd_categories_updated','trd_pos_prices_updated','trd_stock_updated'].includes(event.key))update();};
   update();
   const timer=setInterval(update,refreshInterval);
   window.addEventListener('focus',update);

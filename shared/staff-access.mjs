@@ -16,7 +16,7 @@ export const permissionGroups = {
   'catalog.read':'View products and drafts', 'catalog.edit':'Create and edit product drafts',
   'catalog.submit':'Submit a product draft', 'approvals.decide':'Approve or reject products',
   'categories.manage':'Add, hide or remove categories', 'inventory.read':'View stock and movements',
-  'inventory.receive':'Receive stock', 'inventory.transfer':'Transfer stock',
+  'inventory.receive':'Receive central warehouse stock',
  },
  'Orders, customers and shipping': {
   'orders.read':'View and search orders', 'orders.review':'Review exchange requests and delivery issues',
@@ -51,7 +51,7 @@ export function effectivePermissions(role, grants = []) {
  const expanded = new Set(grants);
  if (expanded.has('pos.sell')) for (const key of posRegisterPermissions) expanded.add(key);
  if (expanded.has('warehouse.fulfill')) for (const key of warehousePermissions) expanded.add(key);
- if (expanded.has('inventory.adjust')) for (const key of ['inventory.receive','inventory.transfer']) expanded.add(key);
+ if (expanded.has('inventory.adjust')) expanded.add('inventory.receive');
  if (role === 'admin' && expanded.has('pos.sell') && expanded.has('warehouse.fulfill')) {
   for (const key of legacyManagement) expanded.add(key);
  }

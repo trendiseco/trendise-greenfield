@@ -33,14 +33,14 @@ Existing Milestone 01 processes may already occupy ports 3000 and 4100. Stop tho
 - Every size/color requires a unique SKU and barcode. Missing, malformed or duplicate values produce an error. Keyboard barcode scanners can populate the barcode field. Published identities are immutable to preserve warehouse scans and historical stock references.
 - Draft → pending → independent Super Admin publish or reject. Draft edits stay private until approved; unchanged live products remain purchasable. Self-approval and stale approvals are blocked. New products start with zero stock.
 - Super Admin user activation/deactivation, assigned locations, role creation and permission editing; approval history and audit events. Disabled users and role changes affect existing sessions on the next request. Super Admin authority is fixed and cannot be delegated via custom role permissions.
-- Super Admin mock stock receipts and transfers, with reasons, audit, stock ledger, reservation protection and idempotency. Website/POS/warehouse use the same central quantities.
+- Super Admin central warehouse mock stock receipts, with reasons, audit, stock ledger, reservation protection and idempotency. Website/POS/warehouse use the same central quantities.
 - Automated domain, HTTP and actual PostgreSQL integration tests, including two independent API instances competing for the final unit and rollback on constraint failure.
 
 ## Mock credentials and roles
 
 Customer: request OTP with a fictional Indian mobile, enter `123456`. Default staff users `admin`, `superadmin`, `pos`, `warehouse` use their matching role and PIN `1234`. Admin screen supports Admin and Super Admin management accounts; optionally enter a newly created user ID with that role. POS and warehouse retain their dedicated login pages. Custom roles are usable through the staff API and restricted by their permissions; the dedicated management screens target the default management roles.
 
-Admin may edit and submit catalog and inspect inventory; Super Admin approves pending submissions, including their own, manages access and receives/transfers mock stock. Admin retains M01 POS and warehouse permissions unless removed in the role editor. Customers cannot edit catalog, staff or inventory.
+Admin may edit and submit catalog and inspect inventory; Super Admin approves pending submissions, including their own, manages access and receives mock stock. Admin retains M01 POS and warehouse permissions unless removed in the role editor. Customers cannot edit catalog, staff or inventory.
 
 Website coupons and Super Admin’s automatic POS promotions are configured separately. Payment simulation never charges money; warehouse dispatch never contacts a courier. Maps and AI remain unconnected.
 
@@ -48,7 +48,7 @@ Website coupons and Super Admin’s automatic POS promotions are configured sepa
 
 1. Sign in as Admin, create a product, add variants with unique barcodes and attach a small local mock photo. Save, inspect preview and submit. A missing barcode fails validation.
 2. Confirm the new draft does not appear in `/shop`. Sign out; sign in as Super Admin, inspect the pending product and publish. It now appears in `/shop`.
-3. Receive mock stock for the new SKU at warehouse/store using Super Admin inventory controls. POS sales and online reservations now share those balances. A transfer cannot move reserved units.
+3. Receive mock stock for the new SKU into the central warehouse using Super Admin inventory controls. POS sales and online reservations share one balance. Existing split balances are combined per SKU when loaded and saved on the next successful write. Store assignments and historical receipts still identify the register.
 4. Place a mock website order using the current T&C, confirm mock payment, then open warehouse. Print pick list and scan the order-line barcode from the pick list and the same barcode from the physical order label before mock dispatch.
 5. Restart the API. Catalog, staff, stock, reservations, orders and sale idempotency survive. Browser session tokens also remain valid until access is revoked.
 

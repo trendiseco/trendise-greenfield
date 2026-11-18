@@ -1,3 +1,4 @@
+import {centralWarehouseId} from './seed.mjs';
 import {randomUUID} from 'node:crypto';
 import {DomainError} from './errors.mjs';
 import {orderCases} from '../../../shared/admin-orders.mjs';
@@ -24,7 +25,7 @@ export const returnInspectionMethods={
     return this.warehouseOrder(session,id);
    }
    const item=order.items.find(line=>line.sku===request.sku);
-   const location=this.locations.find(l=>l.type==='warehouse');
+   const location=this.locations.find(l=>l.id===centralWarehouseId);
    const balances=item&&this.stock[item.sku];
    if(!item||!location||!balances)throw new DomainError(409,'Original garment or warehouse stock is unavailable.');
    const passed=decision==='pass';

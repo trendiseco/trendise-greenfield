@@ -31,7 +31,19 @@ test('HTTP: full mock customer -> warehouse -> POS and shared catalog stock',asy
  assert.equal(after,afterOnline-1);
  assert.equal((await send(base,'/api/products/availability')).data.available[sku],after);
  assert.equal(core.stock[sku]['warehouse-hyd'],after);
- assert.equal(core.stock[sku]['store-hyd-01'],4);
+ assert.deepEqual(core.stock[sku],{'warehouse-hyd':after});
+ const warehouseStock=await send(base,'/api/warehouse/inventory?q='+sku,{token:warehouse});
+ assert.deepEqual(warehouseStock.data.items[0].totals,{onHand:after,reserved:0,available:after});
+ for(const role of ['admin','superadmin']){
+  const token=(await send(base,'/api/auth/staff',{method:'POST',body:{role,pin:'1234'}})).data.token;
+  const inventory=await send(base,'/api/admin/inventory',{token});
+  assert.deepEqual(inventory.data.stock[sku],warehouseStock.data.items[0].totals);
+  const dashboard=await send(base,'/api/admin/summary?period=today',{token});
+  assert.equal(dashboard.data.orders,1);
+  assert.equal(dashboard.data.pos.bills,1);
+  assert.equal(dashboard.data.pos.recentSales[0].id,sale.data.sale.id);
+  assert.equal(dashboard.data.onHand,products.flatMap(product=>product.variants).reduce((sum,variant)=>sum+variant.available,0)-2);
+ }
  const denied=await send(base,'/api/admin/summary',{token:pos});assert.equal(denied.status,403);
  const cancelled=await send(base,`/api/orders/${orderId}/cancel`,{method:'POST',token:customer,body:{}});
  assert.equal(cancelled.data.cancellationReturn.status,'pending');

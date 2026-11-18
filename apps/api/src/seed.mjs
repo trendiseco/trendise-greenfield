@@ -16,14 +16,15 @@ export const initialProducts = [
   { id:'p7',slug:'pique-polo-tshirt',name:'Piqué Polo T-Shirt',category:'Polo T-Shirts',description:'Fine piqué knit with a tonal button placket.',fabric:'Cotton piqué',fit:'Regular fit',swatch:'#e2d6be',label:'CASUAL PRECISION',featured:true,variants:variants('PO-PIQ',[['Ecru','ECR'],['Navy','NVY']],['M','L','XL'],1199) },
   { id:'p8',slug:'essential-crewneck-tee',name:'Essential Crewneck Tee',category:'Round-Neck T-Shirts',description:'An everyday crewneck in soft, breathable jersey.',fabric:'Cotton jersey',fit:'Regular fit',swatch:'#a7a3a4',label:'THE BASICS',featured:false,variants:variants('TS-CRW',[['Ash Grey','ASH'],['Black','BLK']],['M','L','XL'],799) }
 ];
+export const centralWarehouseId='warehouse-hyd';
 export const initialLocations = [
-  { id:'warehouse-hyd', name:'Hyderabad Warehouse',type:'warehouse',onlineEligible:true },
-  { id:'store-hyd-01', name:'Hyderabad Store 01',type:'store',onlineEligible:true }
+  { id:centralWarehouseId, name:'Hyderabad Warehouse',type:'warehouse',onlineEligible:true },
+  { id:'store-hyd-01', name:'Hyderabad Store 01',type:'store',onlineEligible:false }
 ];
 export function generateMockStock(products=initialProducts) {
   const stock = {};
   for (const product of products) for (const variant of product.variants) {
-    stock[variant.sku] = { 'warehouse-hyd': 6, 'store-hyd-01': 4 };
+    stock[variant.sku] = { [centralWarehouseId]:10 };
   }
   return stock;
 }
