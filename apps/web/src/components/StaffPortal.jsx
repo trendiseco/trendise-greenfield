@@ -59,33 +59,30 @@ export default function StaffPortal({portal,children}) {
   sessionStorage.removeItem(tokenKey);setSession(null);
  }
 
+ const portalLabel=staffPortals.find(entry=>entry.id===portal).label;
  if(loading)return <main className="container section-pad"><p role="status">Checking staff access…</p></main>;
- if(portal&&(!session||!staffCanOpen(portal,session.profile)))return <main className="container section-pad">
-  <h1>{session?'Access restricted':'Staff sign-in required'}</h1>
-  <p>{session?'Your assigned role or location does not grant access to this portal.':'Sign in through Operations to open your staff portals.'}</p>
-  <Link className="button button-dark" href="/operations">Go to Operations</Link>
- </main>;
- if(portal)return <StaffContext.Provider value={{...session,logout}}>
-  {children}
-  <ActionFeedback error={error}/>
- </StaffContext.Provider>;
-
- return <main className="staff-shell operations-workspace">
-  <div className="staff-page-header"><div><div className="eyebrow">TRENDISE</div><h1>Operations</h1>
-   {session&&<p>Signed in as {session.profile.userId} · {session.profile.role}</p>}</div>
-   {session&&<button className="button button-line" disabled={busy} onClick={logout}>Sign out</button>}
-  </div>
-  {!session?<form className="staff-login-card" onSubmit={login}>
-   <h2>Staff sign in</h2>
+ if(!session)return <main className="container staff-login-page">
+  <form className="staff-login-card" onSubmit={login}>
+   <h1>{portalLabel}</h1>
+   <p>Sign in with your staff account.</p>
    <label>Staff ID<input required autoComplete="username" value={userId} onChange={event=>setUserId(event.target.value)}/></label>
    <label>Staff PIN<input required type="password" autoComplete="current-password" inputMode="numeric" value={pin} onChange={event=>setPin(event.target.value)}/></label>
    <button className="button button-dark" disabled={busy}>{busy?'Signing in…':'Sign in'}</button>
-  </form>:<section className="staff-panel" aria-label="Available portals">
-   <div className="button-row">{staffPortals.filter(entry=>staffCanOpen(entry.id,session.profile)).map(entry=>
-    <Link className="button button-dark" key={entry.id} href={entry.href}>{entry.label}</Link>
-   )}</div>
-   {!staffPortals.some(entry=>staffCanOpen(entry.id,session.profile))&&<p>No portals are assigned to your account.</p>}
-  </section>}
-  <ActionFeedback error={error}/>
+   <ActionFeedback error={error}/>
+  </form>
  </main>;
+
+ const available=staffPortals.filter(entry=>staffCanOpen(entry.id,session.profile));
+ return <StaffContext.Provider value={{...session,logout}}>
+  {available.length>0&&<nav className="container button-row staff-portal-nav" aria-label="Staff portals">
+   {available.map(entry=><Link key={entry.id} href={entry.href} aria-current={entry.id===portal?'page':undefined}
+    className={`button ${entry.id===portal?'button-dark':'button-line'}`}>{entry.label}</Link>)}
+  </nav>}
+  {staffCanOpen(portal,session.profile)?children:<main className="container section-pad">
+   <h1>Access restricted</h1>
+   <p>{available.length?'Your role or location does not grant access to this page. Choose one of your available portals above.':'No staff portals are assigned to your account.'}</p>
+   <button className="button button-line" disabled={busy} onClick={logout}>Sign out</button>
+  </main>}
+  <ActionFeedback error={error}/>
+ </StaffContext.Provider>;
 }

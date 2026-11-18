@@ -166,7 +166,7 @@ so a production commerce deployment is a separate prerequisite.
 
 ### Staff Operations
 
-Open `/operations` and sign in once with a staff ID and PIN. The page shows the Store POS, Warehouse, Admin or Super Admin workspaces granted to that staff member. The customer storefront is at `/`.
+Open `/pos`, `/warehouse`, `/admin` or `/superadmin` directly and sign in with a staff ID and PIN. Each staff page shows navigation buttons for the portals granted to that staff member. Saved `/operations` links forward to `/admin`. The customer storefront is at `/`.
 
 Use Super Admin → Staff & roles to create roles, search action permissions, assign staff to a role and location, and view recent audit events. Store POS sales and history use the assigned store. Warehouse picking uses the existing central fulfilment queue. Cross-channel customer data and exports are separate grants. Staff management and the audit log are reserved for Super Admin. Receipt printing is a browser control and the permission controls its in-app button.
 

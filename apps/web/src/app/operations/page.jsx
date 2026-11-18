@@ -1,5 +1,5 @@
-import StaffPortal from '../../components/StaffPortal';
+import {redirect} from 'next/navigation';
 
 export default function OperationsPage() {
- return <StaffPortal/>;
+ redirect('/admin');
 }

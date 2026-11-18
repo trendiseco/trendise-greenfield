@@ -193,3 +193,10 @@
 .admin-return-summary dl { margin: 14px 0 0; }
 .admin-return-summary dl > div { flex: 1 1 120px; }
 .admin-return-summary dd { margin: 5px 0 0; font-size: 1.35rem; font-weight: 700; }
+
+.staff-portal-nav {
+  padding-block: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
