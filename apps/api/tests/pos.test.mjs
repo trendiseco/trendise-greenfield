@@ -39,21 +39,30 @@ test('store billing preserves prices, GST, customer history and exact restock ac
  reloaded.clock = app.clock;
  assert.equal(reloaded.purchaseHistory(admin,canonicalPhone('+91 98765 43210')).sales[0].id,sale.id);
  assert.throws(() => reloaded.purchaseHistory({role:'warehouse'},sale.customer.phone),{status:403});
- const input = {barcode,qty:1,reason:'Wrong size',sellable:true};
+ const input = {barcode,replacementBarcode:second.barcode,qty:1,reason:'Wrong size',sellable:true};
  await assert.rejects(reloaded.returnPosItem(cashier,sale.id,{...input,barcode:second.barcode+'X'},'wrong-barcode'),{status:400});
  await assert.rejects(reloaded.returnPosItem(cashier,sale.id,{...input,sellable:false},'no-inspection'),{status:400});
+ const originalBalance=reloaded.available(sku);
+ const replacementBalance=reloaded.stock[second.sku]['warehouse-hyd'];
+ reloaded.stock[second.sku]['warehouse-hyd']=0;
+ await assert.rejects(reloaded.returnPosItem(cashier,sale.id,input,'out-of-stock-exchange'),{status:409});
+ assert.equal(reloaded.available(sku),originalBalance);
+ assert.equal((reloaded.sales.get(sale.id).returns??[]).length,0);
+ reloaded.stock[second.sku]['warehouse-hyd']=replacementBalance;
  const first = await reloaded.returnPosItem(cashier,sale.id,input,'return-part-one');
- assert.equal(first.return.refund,1350);
+ assert.equal(first.return.refund,undefined);
+ assert.equal(first.return.replacement.sku,second.sku);
  assert.deepEqual(await reloaded.returnPosItem(cashier,sale.id,input,'return-part-one'),first);
  const last = await reloaded.returnPosItem(cashier,sale.id,input,'return-part-two');
- assert.equal(Math.round((first.return.gst+last.return.gst)*100),12857);
+ assert.equal(last.return.status,'exchanged');
+ assert.equal(reloaded.available(second.sku),3);
  assert.equal(reloaded.stock[sku]['warehouse-hyd'],warehouseBefore);
  await assert.rejects(reloaded.returnPosItem(cashier,sale.id,input,'return-too-many'),{status:409});
  for (const period of ['today','week','month','year']) {
   const dashboard = reloaded.posDashboard(cashier,period);
   assert.equal(dashboard.sales.length,1);
-  assert.equal(dashboard.refunded,2700);
-  assert.equal(dashboard.net,1000);
+  assert.equal(dashboard.refunded,0);
+  assert.equal(dashboard.net,3700);
  }
  reloaded.clock = () => new Date('2026-11-15T18:30:00Z');
  assert.equal(reloaded.posDashboard(cashier,'today').sales.length,0);
@@ -71,7 +80,7 @@ test('sample bills are repeat-safe and report by India calendar year without cha
  assert.deepEqual(app.stock,stock);
  assert.deepEqual(app.posDashboard(cashier,'year').years,[2026,2025,2024]);
  assert.equal(app.posDashboard(cashier,'year','2025').sales.length,2);
- assert.equal(app.posDashboard(cashier,'year','2024').net,0);
+ assert.equal(app.posDashboard(cashier,'year','2024').sales.length,1);
  const history = app.purchaseHistory(cashier,'9999900001');
  assert.equal(history.sales.length,6);
  const bill = history.sales.find(sale => sale.at.startsWith('2026'));

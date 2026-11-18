@@ -24,7 +24,7 @@ export function adminDashboard(core,period){
     const {decision,quantity,refund}=request.inspection;
     if(decision==='pass')inspections.passed++;
     else{inspections.failed++;inspections.quarantinedUnits+=quantity;}
-    inspections.refunds+=refund.amount;
+    inspections.refunds+=refund?.amount??0;
    }
   }
   const day=days.find(d=>d.date===indiaDate(new Date(o.placedAt)));if(day)day.orders++;

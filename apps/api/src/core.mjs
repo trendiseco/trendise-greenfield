@@ -126,7 +126,7 @@ export class Commerce {
     this.addressCheck(body.address);
     if(body.acceptedPolicyVersion!==this.version)throw new DomainError(400,'You must accept the current Terms & Conditions','TERMS_REQUIRED');
     const paymentMethod=body.paymentMethod??'card';
-    if(typeof paymentMethod!=='string'||!Object.hasOwn(paymentLabels,paymentMethod))throw new DomainError(400,'Choose a valid payment method');
+    if(typeof paymentMethod!=='string'||!Object.hasOwn(paymentLabels,paymentMethod)||paymentMethod==='exchange')throw new DomainError(400,'Choose a valid payment method');
     if(paymentMethod==='split'&&!splitEligible(lookupDeliveryPin(body.address.pincode)))throw new DomainError(400,'Partial payment is available only for verified PIN areas at least 1,000 km from 501505.','SPLIT_PAYMENT_UNAVAILABLE');
     const lines=this.normalizeLines(body.items);
     const quote=this.onlineQuote(session,body);
@@ -191,7 +191,27 @@ export class Commerce {
     this.sales.set(id,sale);this.audit.push({type:'POS_SALE',id,at:sale.at});
     const response={sale:clone(sale),message:'Demo sale completed. No payment collected.'};this.setIdempotent(eventKey,fingerprint,response);return response;
   });}
-  ordersFor(session) {if(session.role==='customer')return [...this.orders.values()].filter(o=>o.phone===session.phone).map(o=>({...clone(o),...orderEligibility(o,this.orderNow())}));this.permit(session,'orders.read');return [...this.orders.values()].map(clone);}
+  ordersFor(session) {
+    if(session.role==='customer')return [...this.orders.values()].filter(order=>order.phone===session.phone).map(order=>{
+      const eligibility=orderEligibility(order,this.orderNow());
+      const items=order.items.map(item=>({...clone(item),...(eligibility.canReturn?{exchangeOptions:this.exchangeOptions(item)}:{})}));
+      return {...clone(order),...eligibility,items};
+    });
+    this.permit(session,'orders.read');
+    return [...this.orders.values()].map(clone);
+  }
+  exchangeOptions(item) {
+    const {product}=this.product(item.sku);
+    if(this.hiddenCategories.includes(product.category))return [];
+    return product.variants.filter(variant=>variant.sku!==item.sku&&this.available(variant.sku)>=item.qty)
+      .map(({sku,size,color})=>({sku,size,color}));
+  }
+  exchangeReplacement(item,sku) {
+    const replacement=this.exchangeOptions(item).find(variant=>variant.sku===sku);
+    if(!replacement)throw new DomainError(409,'Select an available size or colour of the same product for the requested quantity.');
+    return replacement;
+  }
+
   warehouseQueue(session){
     this.permit(session,'warehouse.read');
     return [...this.orders.values()].reverse().map(order=>({id:order.id,status:order.status,placedAt:order.placedAt,lineCount:order.items.length,hasReturns:Boolean(order.returnRequests?.length||order.returnRequest||order.cancellationReturn),trackingRevision:order.shiprocketOrder?.revision,cancellationReceiptCount:order.cancellationReturn?.receipts.length,verifiedUnits:order.items.reduce((sum,item)=>sum+Math.min(item.qty,order.verified?.[item.sku]||0),0),units:order.items.reduce((sum,item)=>sum+item.qty,0)}));
@@ -309,7 +329,7 @@ export class Commerce {
     this.permit(session,'warehouse.receive');
     const order=this.orders.get(id);if(!order)throw new DomainError(404,'Order not found');
     const request=(order.returnRequests||[order.returnRequest].filter(Boolean)).find(r=>r.sku===body.sku);
-    if(!request||request.status!=='approved')throw new DomainError(409,'Admin approval is required before receiving a return.');
+    if(!request||request.status!=='approved')throw new DomainError(409,'Admin approval is required before receiving an exchange garment.');
     const item=order.items.find(i=>i.sku===request.sku);
     if(!item||typeof body.barcode!=='string'||body.barcode.trim()!==item.barcode)throw new DomainError(400,'The garment barcode does not match the approved item.');
     if(Number(body.quantity)!==item.qty)throw new DomainError(400,'Confirm the full quantity for the approved order line.');
@@ -324,16 +344,18 @@ export class Commerce {
     const reason=body.reason;
     if(typeof reason!=='string'||!Object.hasOwn(returnReasons,reason))throw new DomainError(400,'Select a reason');
     const routine=['fit','preference'].includes(reason);
-    if(routine&&!allowed.canReturn)throw new DomainError(409,'Change-of-mind returns must be requested within 3 days of delivery.');
+    if(routine&&!allowed.canReturn)throw new DomainError(409,'Request a change-of-mind exchange within 3 days of delivery.');
     if(!routine&&!allowed.canReportIssue)throw new DomainError(409,'An issue can be reported after dispatch, once per order.');
     const note=typeof body.note==='string'?body.note.trim():'';
     if(note.length>1000||(!routine&&note.length<5))throw new DomainError(400,'Describe the issue in 5 to 1,000 characters.');
     if(!order.items.some(i=>i.sku===body.sku))throw new DomainError(400,'Select an item from this order');
-    if(routine&&body.conditionConfirmed!==true)throw new DomainError(400,'Confirm the return condition checklist');
+    if(routine&&body.conditionConfirmed!==true)throw new DomainError(400,'Confirm the exchange condition checklist');
     const request={sku:body.sku,reason,note,status:'requested',requestedAt:new Date(this.orderNow()).toISOString()};
-    if(routine){const requests=order.returnRequests||[order.returnRequest].filter(Boolean);if(requests.some(r=>r.sku===body.sku))throw new DomainError(409,'A return was already requested for this item');order.returnRequests=[...requests,request];}
+    if(routine){
+      request.replacement=this.exchangeReplacement(order.items.find(item=>item.sku===body.sku),body.replacementSku);
+      const requests=order.returnRequests||[order.returnRequest].filter(Boolean);if(requests.some(r=>r.sku===body.sku))throw new DomainError(409,'An exchange was already requested for this item');order.returnRequests=[...requests,request];}
     else order.issueReport=request;
-    this.event(session,routine?'RETURN_REQUESTED':'DELIVERY_ISSUE_REPORTED',id);return clone(order);
+    this.event(session,routine?'EXCHANGE_REQUESTED':'DELIVERY_ISSUE_REPORTED',id);return clone(order);
   });}
   permit(session,permission) {
     if(!effectivePermissions(session.role,this.roles[session.role]).includes(permission))throw new DomainError(403,'Permission required: '+permission);

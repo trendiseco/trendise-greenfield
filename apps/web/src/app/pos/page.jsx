@@ -69,7 +69,7 @@ function Pos(){
  const [scan,setScan]=useState(''),[cart,setCart]=useState([]),[name,setName]=useState(''),[phone,setPhone]=useState('');
  const [method,setMethod]=useState('UPI'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[receipt,setReceipt]=useState(null),[search,setSearch]=useState(''),[tab,setTab]=useState('billing');
  const allowedTabs=[
-  ['billing','Billing','pos.read'],['dashboard','Dashboard','pos.report'],['customers','Customer search & returns','pos.history']
+  ['billing','Billing','pos.read'],['dashboard','Dashboard','pos.report'],['customers','Customer search & exchanges','pos.history']
  ].filter(([, , permission])=>can(permission));
  const currentTab=allowedTabs.some(([key])=>key===tab)?tab:allowedTabs[0]?.[0];
  const [billSuccess,setBillSuccess]=useState('');
@@ -171,7 +171,7 @@ function Pos(){
  return <main className="staff-shell pos-workspace">
   {receipt&&<PosReceipt sale={receipt} canPrint={can('pos.receipt')} onClose={()=>{setReceipt(null);scanner.current?.focus();}}/>}
   <div className="pos-print-hide">
-   <div className="staff-page-header"><div><div className="eyebrow">{inventory?.locationName||'STORE'}</div><h1>Point of <em>sale.</em></h1><p>Development register · payments and refunds are simulated.</p></div><button disabled={busy} className="small-outline" onClick={logout}>Sign out</button></div>
+   <div className="staff-page-header"><div><div className="eyebrow">{inventory?.locationName||'STORE'}</div><h1>Point of <em>sale.</em></h1><p>Development register · payments are simulated. Change-of-mind purchases are exchange only.</p></div><button disabled={busy} className="small-outline" onClick={logout}>Sign out</button></div>
    <nav aria-label="Store POS" className="cms-tabs">{allowedTabs.map(([key,label])=><button disabled={busy} key={key} aria-pressed={currentTab===key} onClick={()=>{setError('');setTab(key);}}>{label}</button>)}</nav>
 
    {currentTab==='dashboard'&&<Dashboard token={token} onReceipt={openReceipt} canCreateExamples={can('pos.examples')}/>}

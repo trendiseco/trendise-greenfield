@@ -37,7 +37,7 @@ test('PostgreSQL restart durability, two-process lock, rollback and database con
  const pickingOrder=await call(`/api/warehouse/orders/${paid.orderId}`,undefined,staff.token);
  assert.equal(pickingOrder.items[0].slug,'oxford-formal-shirt');
  assert.ok(pickingOrder.allocations[0].locationName);
- await call(`/api/warehouse/orders/${paid.orderId}/scan`,{pickCode:`LINE-${paid.orderId}-1`,barcode:`LINE-${paid.orderId}-1`},staff.token);await call(`/api/warehouse/orders/${paid.orderId}/dispatch`,{},staff.token);await call(`/api/warehouse/orders/${paid.orderId}/delivered`,{},staff.token);await call(`/api/orders/${paid.orderId}/return`,{sku,reason:'fit',conditionConfirmed:true},customer.token);
+ await call(`/api/warehouse/orders/${paid.orderId}/scan`,{pickCode:`LINE-${paid.orderId}-1`,barcode:`LINE-${paid.orderId}-1`},staff.token);await call(`/api/warehouse/orders/${paid.orderId}/dispatch`,{},staff.token);await call(`/api/warehouse/orders/${paid.orderId}/delivered`,{},staff.token);await call(`/api/orders/${paid.orderId}/return`,{sku,replacementSku:restarted.product(sku).product.variants[1].sku,reason:'fit',conditionConfirmed:true},customer.token);
  const admin=await call('/api/auth/staff',{role:'admin',pin:'1234'}),superadmin=await call('/api/auth/staff',{role:'superadmin',pin:'1234'});
  const queue=await call('/api/admin/orders?status=needs-review',undefined,admin.token);
  assert.equal(queue.orders[0].id,paid.orderId);
@@ -46,8 +46,8 @@ test('PostgreSQL restart durability, two-process lock, rollback and database con
  const barcode=restarted.product(sku).variant.barcode;
  await call(`/api/warehouse/orders/${paid.orderId}/return-receipt`,{sku,barcode,quantity:1},staff.token);
  const inspected=await call(`/api/warehouse/orders/${paid.orderId}/return-inspection`,{sku,decision:'pass',reason:'Tags intact and garment unused.'},staff.token);
- assert.equal(inspected.returnRequests[0].inspection.refund.amount,paid.order.quote.total);
- const draft=await call('/api/admin/products',{name:'DB Mock Shirt',slug:'db-mock-shirt',category:'Shirts',fabric:'Cotton',fit:'Regular',description:'Mock persistence test',images:[{kind:'tryon',generated:true,color:'Blue',alt:'Mock overlay persistence asset',src:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='}],sizeChart:{unit:'cm',status:'sample',tolerance:1,notes:'Mock measurements',rows:[{size:'M',length:72,chestWidth:52,shoulder:44,sleeve:62}]},variants:[{sku:'DB-M',barcode:'DB-BAR-M',color:'Blue',size:'M',price:900,posPrice:800}]},admin.token);
+ assert.ok(inspected.returnRequests[0].inspection.replacementOrderId);
+ const draft=await call('/api/admin/products',{name:'DB Mock Shirt',slug:'db-mock-shirt',category:'Shirts',fabric:'Cotton',fit:'Regular',description:'Mock persistence test',images:[{kind:'tryon',generated:true,color:'Blue',alt:'Mock overlay persistence asset',src:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='}],sizeChart:{unit:'cm',status:'sample',tolerance:1,notes:'Mock measurements',rows:[{size:'M',length:72,chestWidth:52,shoulder:44,sleeve:62}]},variants:[{sku:'DB-M',barcode:'DB-BAR-M',color:'Blue',size:'M',price:900,posPrice:800},{sku:'DB-L',barcode:'DB-BAR-L',color:'Blue',size:'L',price:900,openingQty:2}]},admin.token);
  await call(`/api/admin/products/${draft.product.id}/submit`,{revision:1},admin.token);await call(`/api/admin/products/${draft.product.id}/decide`,{revision:1,action:'publish'},superadmin.token);
  await call('/api/admin/inventory/receive',{sku:'DB-M',locationId:'warehouse-hyd',qty:5,key:'database-receipt',reason:'Mock stock'},superadmin.token);
  await call('/api/admin/inventory/transfer',{sku:'DB-M',from:'warehouse-hyd',to:'store-hyd-01',qty:2,key:'pos-test-transfer'},superadmin.token);
@@ -61,17 +61,17 @@ test('PostgreSQL restart durability, two-process lock, rollback and database con
  assert.equal(denied.status,403);
  const {sale:posBill}=await call('/api/pos/sales',{items:[{sku:'DB-M',qty:2}],customer:{name:'Test Buyer',phone:'9876543210'},paymentMethod:'Card',expectedTotal:1400},cashier.token,'db-pos-bill');
  assert.equal(posBill.quote.gst,66.67);
- assert.equal(posBill.terms,terms);
+ assert.equal(posBill.terms.endsWith(terms),true);
  await call('/api/admin/pos-terms',{text:'Updated store receipt terms.'},superadmin.token);
  const history=await call('/api/pos/customers/search',{phone:'+91 9876543210'},admin.token);
  assert.equal(history.sales[0].id,posBill.id);
- assert.equal(history.orders[0].id,paid.orderId);
- const returned=await call(`/api/pos/sales/${posBill.id}/returns`,{barcode:'DB-BAR-M',qty:1,reason:'Unused with tags',sellable:true},cashier.token,'db-pos-return');
- assert.equal(returned.return.refund,700);
+ assert.equal(history.orders.some(order=>order.id===paid.orderId),true);
+ const returned=await call(`/api/pos/sales/${posBill.id}/returns`,{barcode:'DB-BAR-M',replacementBarcode:'DB-BAR-L',qty:1,reason:'Unused with tags',sellable:true},cashier.token,'db-pos-return');
+ assert.equal(returned.return.replacement.sku,'DB-L');
  const posReloaded=new DurableCommerce(pool);
  await posReloaded.unit(()=>{
   assert.equal(posReloaded.sales.get(posBill.id).returns[0].id,returned.return.id);
-  assert.equal(posReloaded.sales.get(posBill.id).terms,terms);
+  assert.equal(posReloaded.sales.get(posBill.id).terms.endsWith(terms),true);
   assert.equal(posReloaded.posTermsSettings({role:'superadmin'}).text,'Updated store receipt terms.');
   assert.equal(posReloaded.stock['DB-M']['warehouse-hyd'],2);
   assert.equal(posReloaded.stock['DB-M']['store-hyd-01'],2);
@@ -82,7 +82,7 @@ test('PostgreSQL restart durability, two-process lock, rollback and database con
  await call('/api/admin/rewards/customer',{phone:'9876543210',delta:100,key:'db-reward-adjustment',reason:'Mock DB verification'},admin.token);
  const media=await call('/api/admin/media',{mime:'image/png',name:'DB mock image',data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII='},admin.token);const imageResponse=await fetch(base+media.url);assert.equal(imageResponse.headers.get('content-type'),'image/png');assert.ok((await imageResponse.arrayBuffer()).byteLength>20);
  const q=await call('/api/checkout/quote',{items:[{sku,qty:1}],coupon:'DBDEMO',redeemPoints:10},customer.token);assert.equal(q.pointsDiscount,10);assert.equal(q.couponDiscount,100);
- const again=new DurableCommerce(pool);await again.unit(()=>{assert.equal(again.orders.get(paid.orderId).status,'delivered');assert.equal(again.orders.get(paid.orderId).returnRequests[0].inspection.refund.reference,inspected.returnRequests[0].inspection.refund.reference);assert.equal(again.ledger.filter(event=>event.reason==='RETURN_RESTOCK'&&event.ref===paid.orderId).length,1);assert.equal(again.available('DB-M'),2);assert.equal(again.product('DB-M').product.images[0].kind,'tryon');assert.equal(again.product('DB-M').product.sizeChart.rows[0].length,72);assert.equal(again.approvals.length,1);assert.equal(again.session(admin.token).role,'admin');assert.equal(again.website.site.hero.title,'Persisted website');assert.ok(again.website.coupons.some(c=>c.code==='DBDEMO'));assert.ok(again.customer({role:'customer',phone:'9876543210'}).points>=100);});
+ const again=new DurableCommerce(pool);await again.unit(()=>{assert.equal(again.orders.get(paid.orderId).status,'delivered');assert.equal(again.orders.get(paid.orderId).returnRequests[0].inspection.replacementOrderId,inspected.returnRequests[0].inspection.replacementOrderId);assert.equal(again.ledger.filter(event=>event.reason==='EXCHANGE_RESTOCK'&&event.ref===paid.orderId).length,1);assert.equal(again.available('DB-M'),2);assert.equal(again.product('DB-M').product.images[0].kind,'tryon');assert.equal(again.product('DB-M').product.sizeChart.rows[0].length,72);assert.equal(again.approvals.length,1);assert.equal(again.session(admin.token).role,'admin');assert.equal(again.website.site.hero.title,'Persisted website');assert.ok(again.website.coupons.some(c=>c.code==='DBDEMO'));assert.ok(again.customer({role:'customer',phone:'9876543210'}).points>=100);});
  }finally{await new Promise(resolve=>server.close(resolve));}
  }finally{await isolated.end();const cleanup=poolFor(process.env.TEST_DATABASE_URL);try{await cleanup.query(`DROP SCHEMA ${schema} CASCADE`);}finally{await cleanup.end();}}
 

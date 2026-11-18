@@ -1,4 +1,5 @@
 'use client';
+import {posExchangeTerms,returnMs} from '../../../../shared/order-policy.mjs';
 import ActionFeedback from './ActionFeedback';
 import {useRef,useState} from 'react';
 import {api,cash,uniqueKey} from '../lib/api';
@@ -28,32 +29,33 @@ function BillItems({items}) {
 }
 
 function ReturnEntries({sale}) {
- return sale.returns?.length>0&&<ul>{sale.returns.map(entry=><li key={entry.id}>{saleDate(entry.at)} · {entry.sku} × {entry.qty} · {entry.reason} · {cash(entry.refund)} mock refund · Restocked at {entry.locationId}</li>)}</ul>;
+ return sale.returns?.length>0&&<ul>{sale.returns.map(entry=><li key={entry.id}>{saleDate(entry.at)} · {entry.sku} × {entry.qty} · {entry.reason} · {entry.replacement?<>Exchange → {entry.replacement.color} / {entry.replacement.size} · {entry.replacement.sku}</>:<>Historical refund · {cash(entry.refund)}</>} · Received at {entry.locationId}</li>)}</ul>;
 }
 
-function PosReturn({sale,token,onReturned}) {
+function PosExchange({sale,token,onReturned}) {
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const attempt=useRef(null);
  async function submit(event) {
   event.preventDefault();
   const form=event.currentTarget,fields=new FormData(form);
-  const body=JSON.stringify({barcode:fields.get('barcode'),qty:Number(fields.get('qty')),reason:fields.get('reason'),sellable:fields.get('sellable')==='on'});
+  const body=JSON.stringify({barcode:fields.get('barcode'),replacementBarcode:fields.get('replacementBarcode'),qty:Number(fields.get('qty')),reason:fields.get('reason'),sellable:fields.get('sellable')==='on'});
   if(attempt.current?.body!==body)attempt.current={body,key:uniqueKey()};
   setBusy(true);setError('');setNotice('');
   try {
    const result=await api(`/api/pos/sales/${sale.id}/returns`,{token,method:'POST',body,headers:{'x-idempotency-key':attempt.current.key}});
    onReturned(result.sale);form.reset();attempt.current=null;
-   setNotice(`Restocked ${result.return.qty} at Hyderabad Warehouse. Mock refund ${cash(result.return.refund)}.`);
+   setNotice(`Exchanged ${result.return.qty} piece(s) for ${result.return.replacement.color} / ${result.return.replacement.size}.`);
   } catch(error) {setError(error.message);}
   finally {setBusy(false);}
  }
  return <form onSubmit={submit} className="m02-grid">
-  <label>Scan returned garment<input name="barcode" required autoComplete="off" placeholder="e.g. 0012345678905" onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.form.elements.qty.focus();}}}/></label>
+  <label>Scan returned garment<input name="barcode" required autoComplete="off" placeholder="e.g. 0012345678905" onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.form.elements.replacementBarcode.focus();}}}/></label>
+  <label>Replacement garment barcode<input name="replacementBarcode" required autoComplete="off"/></label>
   <label>Quantity<input name="qty" type="number" min="1" max="25" required defaultValue="1"/></label>
-  <label>Return reason<input name="reason" required maxLength={240} placeholder="e.g. Wrong size"/></label>
+  <label>Exchange reason<input name="reason" required maxLength={240} placeholder="e.g. Wrong size"/></label>
   <label><input name="sellable" type="checkbox" required/> Tags and condition checked. Item is sellable and ready for warehouse restock.</label>
-  <button disabled={busy}>{busy?"Saving return…":"Accept return & restock"}</button>
-  <ActionFeedback error={error} success={notice} pending={busy?'Saving return…':''}/>
+  <button disabled={busy}>{busy?"Saving exchange…":"Complete exchange"}</button>
+  <ActionFeedback error={error} success={notice} pending={busy?'Saving exchange…':''}/>
  </form>;
 }
 
@@ -63,7 +65,7 @@ export function PosSaleList({sales,token,onReceipt,onReturned}) {
   <p>{sale.payment.method} · {sale.locationName||sale.locationId}{sale.staffId&&` · Cashier ${sale.staffId}`}</p>
   {sale.example&&<p>{sale.example}</p>}<BillItems items={sale.items}/><ReturnEntries sale={sale}/>
   {onReceipt&&<button onClick={()=>onReceipt(sale)}>View / print bill</button>}
-  {onReturned&&!sale.example&&sale.items.some(item=>item.qty>(sale.returns||[]).filter(entry=>entry.sku===item.sku).reduce((sum,entry)=>sum+entry.qty,0))&&<PosReturn sale={sale} token={token} onReturned={onReturned}/>}
+  {onReturned&&!sale.example&&Date.now()-Date.parse(sale.at)<returnMs&&sale.items.some(item=>item.qty>(sale.returns||[]).filter(entry=>entry.sku===item.sku).reduce((sum,entry)=>sum+entry.qty,0))&&<PosExchange sale={sale} token={token} onReturned={onReturned}/>}
  </details>) : <p>No store bills found.</p>;
 }
 

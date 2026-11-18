@@ -11,21 +11,23 @@ try{
  const result=await c.unit(async()=>{
   const existing=[...c.orders.values()].find(o=>o.demoScenario===scenario&&o.phone===phone&&orderEligibility(o,c.orderNow()).canReturn);
   if(existing&&!completeReturn)return existing;
-  const variant=c.products.flatMap(p=>p.websiteVisible===false?[]:p.variants).find(v=>v.active!==false&&c.available(v.sku)>0);
-  if(!variant)throw new Error('No website stock available for the demo order');
+  const variant=c.products.flatMap(p=>p.websiteVisible===false?[]:p.variants).find(v=>v.active!==false&&c.available(v.sku)>0&&(!completeReturn||c.exchangeOptions({sku:v.sku,qty:1}).length));
+  if(!variant)throw new Error('No eligible website stock available for the demo order');
   const customer={role:'customer',phone},warehouse={role:'warehouse',userId:'warehouse'};
   const now=Date.now();
-  // Stage the placement time before the hold. Dispatch and delivery use the real current time.
   c.clock=()=>new Date(now-cancellationMs-60000);
   const {orderId}=await c.placeOrder(customer,{items:[{sku:variant.sku,qty:1}],paymentMethod:'cod',acceptedPolicyVersion:c.version,address:{name:'TRENDISE Demo Shopper',phone,line1:'10 Demo Road',city:'Hyderabad',district:'Hyderabad',state:'Telangana',pincode:'500001'}},'delivered-demo-'+crypto.randomUUID());
   c.clock=()=>new Date(now);
-  await c.warehouseVerify(warehouse,orderId,warehousePickCode(orderId,0),variant.barcode);
+  const pickCode=warehousePickCode(orderId,0);
+  await c.warehouseVerify(warehouse,orderId,pickCode,pickCode);
   await c.dispatch(warehouse,orderId);await c.markDelivered(warehouse,orderId);
   const order=c.orders.get(orderId);order.demoScenario=scenario;
   if(completeReturn){
-   await c.requestOrderReturn(customer,orderId,{sku:variant.sku,reason:'fit',conditionConfirmed:true,note:'Demo return: the fit was not right.'});
-   await c.reviewOrderCase({role:'admin',userId:'admin'},orderId,{caseKey:'return:'+variant.sku,decision:'approved',note:'Your return is approved. The warehouse will check the item when it arrives.'});
+   const replacement=c.exchangeOptions({sku:variant.sku,qty:1})[0];
+   await c.requestOrderReturn(customer,orderId,{sku:variant.sku,replacementSku:replacement.sku,reason:'fit',conditionConfirmed:true,note:'Demo exchange: the fit was not right.'});
+   await c.reviewOrderCase({role:'admin',userId:'admin'},orderId,{caseKey:'return:'+variant.sku,decision:'approved',note:'Your exchange is approved. The warehouse will check the item when it arrives.'});
    await c.receiveOrderReturn(warehouse,orderId,{sku:variant.sku,barcode:variant.barcode,quantity:1});
+   await c.inspectOrderReturn(warehouse,orderId,{sku:variant.sku,decision:'pass',reason:'Demo garment passed inspection.'});
   }
   return order;
  });

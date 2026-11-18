@@ -58,7 +58,7 @@ Website coupons and Super Admin’s automatic POS promotions are configured sepa
 2. In Super Admin → **Store POS promotions**, select a published variant and enter a percentage off or a flat final price. The register applies it automatically.
 3. Open `/pos`, sign in with the assigned demo staff ID, and use the top barcode field. A keyboard-mode scanner should send Enter after the barcode. Enter the customer name and Indian mobile number, choose a simulated payment method, and save the bill. Print from the saved receipt. Prices include the configured development GST of 5%.
 4. **Dashboard** filters saved bills by day, Monday-start week, month or year in India time. **Customer search** in POS and Admin shows matching store bills and website orders. POS store-bill access is scoped to the assigned store. Older bills saved without a mobile number remain available in the dashboard by date.
-5. Open a store bill in POS customer history to scan and accept a sellable return. Confirm tags and condition and enter the quantity and reason. Stock is posted directly to Hyderabad Warehouse, so use this action when the goods are ready for warehouse stock. Returns cannot exceed the original sold quantity, and refunds are simulated.
+5. Open a store bill in POS customer history to exchange within 3 days. Scan the original and replacement inventory barcodes, confirm the tags and condition, and save. Warehouse stock is adjusted for both variants together. The replacement must be another available size or colour of the same product.
 
 ## Checks
 

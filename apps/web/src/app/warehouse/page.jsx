@@ -18,7 +18,7 @@ import {StaffTabs,useStaffSection} from '../../components/StaffWorkspace';
 const formatTime=value=>new Date(value).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',dateStyle:'medium',timeStyle:'short'})+' IST';
 const pickable=status=>['paid','confirmed','picking'].includes(status);
 
-const warehouseTabs=[['orders','Orders & picking'],['returns','Returns'],['inventory','Products & inventory']];
+const warehouseTabs=[['orders','Orders & picking'],['returns','Exchanges & courier returns'],['inventory','Products & inventory']];
 
 export default function WarehousePage(){
  return <StaffPortal portal="warehouse"><Warehouse/></StaffPortal>;
@@ -93,14 +93,14 @@ function Warehouse(){
  return <main className="staff-shell operations-workspace operations-warehouse">
   <div className="staff-page-header"><div><div className="eyebrow">WAREHOUSE / DEVELOPMENT</div><h1>Warehouse <em>operations.</em></h1><p>Pick and dispatch orders, receive returns and check shared stock.</p></div><div className="button-row"><button className="small-outline" disabled={busy} onClick={()=>R(n=>n+1)}>Refresh</button><button className="small-outline" disabled={busy} onClick={logout}>Sign out</button></div></div>
   <StaffTabs label="Warehouse sections" tabs={tabs} active={view} onChange={openSection}/>
-  {view==='inventory'?<WarehouseInventory token={token} onSessionExpired={expireSession}/>:<div className="warehouse-layout"><section className="staff-panel warehouse-list"><div className="panel-heading"><h2>{returnsView?'Return queue':'Order queue'}</h2><span>{queue?.length??'—'} orders</span></div>
+  {view==='inventory'?<WarehouseInventory token={token} onSessionExpired={expireSession}/>:<div className="warehouse-layout"><section className="staff-panel warehouse-list"><div className="panel-heading"><h2>{returnsView?'Exchange & courier return queue':'Order queue'}</h2><span>{queue?.length??'—'} orders</span></div>
    <p className="hint">New orders appear automatically. Most recent first.</p>
    {queueError&&<p className="error-box" role="alert">{queueError}</p>}
-   {!orders&&!queueError?<p role="status">Loading orders…</p>:queue?.length===0?<p>{returnsView?'No returns yet.':'No orders yet.'}</p>:queue?.map(o=><button key={o.id} className={`warehouse-order ${selected===o.id?'active':''}`} aria-pressed={selected===o.id} disabled={busy} onClick={()=>{if(selected!==o.id)D(null);S(o.id);setFeedbackAt('');E('');M('');PC('');BC('');}}><span><strong>{o.id}</strong><small>{o.lineCount} lines / {o.units} units</small>{!returnsView&&pickable(o.status)&&<small>{o.verifiedUnits===o.units?'Ready to dispatch':`${o.verifiedUnits??0} / ${o.units} verified`}</small>}</span><span className="order-status">{o.status.toUpperCase()}</span></button>)}
+   {!orders&&!queueError?<p role="status">Loading orders…</p>:queue?.length===0?<p>{returnsView?'No exchanges or courier returns yet.':'No orders yet.'}</p>:queue?.map(o=><button key={o.id} className={`warehouse-order ${selected===o.id?'active':''}`} aria-pressed={selected===o.id} disabled={busy} onClick={()=>{if(selected!==o.id)D(null);S(o.id);setFeedbackAt('');E('');M('');PC('');BC('');}}><span><strong>{o.id}</strong><small>{o.lineCount} lines / {o.units} units</small>{!returnsView&&pickable(o.status)&&<small>{o.verifiedUnits===o.units?'Ready to dispatch':`${o.verifiedUnits??0} / ${o.units} verified`}</small>}</span><span className="order-status">{o.status.toUpperCase()}</span></button>)}
   </section><section className="staff-panel warehouse-detail">
    {!feedbackAt&&<ActionFeedback error={error}/>}
-   {!order||(returnsView&&!queue?.some(row=>row.id===order.id))?<div className="pos-empty"><h3>{returnsView?'Select a return':selected&&!error?'Loading order…':'Select an order'}</h3><p>{returnsView?'Open a return to review approval and record receipt.':'Open the pick list to see product images, quantities and barcodes.'}</p></div>:<>
-    <div className="panel-heading"><div><h2>{order.id}</h2><p className="hint">Placed {formatTime(order.placedAt)}</p>{order.deliveredAt&&<p className="hint">Delivered {formatTime(order.deliveredAt)} · Customer return deadline {formatTime(orderEligibility(order).returnUntil)}</p>}</div><span className="order-status">{order.status.toUpperCase()}</span></div>
+   {!order||(returnsView&&!queue?.some(row=>row.id===order.id))?<div className="pos-empty"><h3>{returnsView?'Select an exchange or courier return':selected&&!error?'Loading order…':'Select an order'}</h3><p>{returnsView?'Open a return to review approval and record receipt.':'Open the pick list to see product images, quantities and barcodes.'}</p></div>:<>
+    <div className="panel-heading"><div><h2>{order.id}</h2><p className="hint">Placed {formatTime(order.placedAt)}</p>{order.deliveredAt&&<p className="hint">Delivered {formatTime(order.deliveredAt)} · Customer exchange deadline {formatTime(orderEligibility(order).returnUntil)}</p>}</div><span className="order-status">{order.status.toUpperCase()}</span></div>
     {!returnsView&&(active||['shipped','delivered','cancelled'].includes(order.status))&&<section className="warehouse-progress" aria-label="Picking and dispatch status">
      <h3>{active?(verified?'Ready to dispatch':'Picking in progress'):order.status==='shipped'?'Dispatched':order.status==='delivered'?'Delivered':'Cancelled'}</h3>
      {active&&<>
@@ -139,37 +139,39 @@ function Warehouse(){
     </div>}
     {returnsView&&<div className="operations-return-cases">
     {orderCases(order).filter(({kind})=>kind==='return').map(({kind,key,request})=><div key={key} className="notice-box">
-     <p>{kind==='return'?'Customer return':'Delivery issue'} · {request.sku} · {returnReasons[request.reason]} · {orderRequestStatus(request)}</p>
+     <p>{kind==='return'?'Customer exchange':'Delivery issue'} · {request.sku} · {returnReasons[request.reason]} · {orderRequestStatus(request)}</p>
      {request.note&&<p>{request.note}</p>}
      {request.receivedAt&&<p>Received {formatTime(request.receivedAt)}{!request.inspection&&' · Awaiting inspection'}</p>}
+     {request.replacement&&<p>Replacement · {request.replacement.color} / {request.replacement.size} · {request.replacement.sku}</p>}
      <ReturnOutcome inspection={request.inspection} staff/>
      {can('warehouse.inspect')&&request.receivedAt&&!request.inspection&&<form className="stack" onSubmit={e=>{
       e.preventDefault();
       const form=new FormData(e.currentTarget);
       run(async()=>{
-       D(await action('return-inspection',{sku:request.sku,decision:form.get('decision'),reason:form.get('reason')}));
-       M('Return inspection and settlement recorded.');
+       D(await action('return-inspection',{sku:request.sku,decision:form.get('decision'),reason:form.get('reason'),replacementSku:form.get('replacementSku')}));
+       M('Exchange inspection recorded. Passed items create a replacement order.');
       },key+'-inspect');
      }}>
-      <h3>Inspect received return</h3>
+      <h3>Inspect original garment</h3>
       <ul>{returnConditions.map(condition=><li key={condition}>{condition}</li>)}</ul>
-      <label>Inspection result<select name="decision" required defaultValue=""><option value="" disabled>Choose a result</option><option value="pass">Pass · restock and record eligible mock refund</option><option value="fail">Fail · quarantine outside sellable stock</option></select></label>
+      <label>Inspection result<select name="decision" required defaultValue=""><option value="" disabled>Choose a result</option><option value="pass">Pass · restock and create replacement order</option><option value="fail">Fail · quarantine outside sellable stock</option></select></label>
+      {!request.replacement&&<label>Replacement SKU (required to pass an earlier request)<input name="replacementSku" autoComplete="off"/></label>}
       <label>Reason shown to customer<textarea name="reason" placeholder="e.g. Tags intact and no visible wear." required minLength={5} maxLength={500}/></label>
       <button className="button button-dark" disabled={busy}>Record final inspection</button>
      </form>}{feedback(key+'-inspect')}
      {can('warehouse.receive')&&kind==='return'&&request.status==='approved'&&!request.receivedAt&&<form className="stack" onSubmit={e=>{
       e.preventDefault();
       const form=new FormData(e.currentTarget);
-      run(async()=>{D(await action('return-receipt',{sku:request.sku,barcode:form.get('returnBarcode'),quantity:form.get('returnQuantity')}));M('Mock return received for inspection.');},key+'-receive');
+      run(async()=>{D(await action('return-receipt',{sku:request.sku,barcode:form.get('returnBarcode'),quantity:form.get('returnQuantity')}));M('Original garment received for exchange inspection.');},key+'-receive');
      }}>
       <label>Returned garment barcode<input name="returnBarcode" placeholder="Scan the barcode printed on the returned tag" required autoComplete="off"/></label>
       <label>Units received (expected {order.items.find(item=>item.sku===request.sku)?.qty})<input name="returnQuantity" placeholder="e.g. 1" type="number" min="1" required/></label>
-      <button className="button button-dark" disabled={busy}>Record mock return receipt</button>
+      <button className="button button-dark" disabled={busy}>Receive garment for exchange</button>
      </form>}{feedback(key+'-receive')}
     </div>)}
     </div>}
     {!returnsView&&(orderCases(order).length>0||order.cancellationReturn)&&<div className="button-row">
-     {(orderCases(order).some(({kind})=>kind==='return')||order.cancellationReturn)&&<button className="small-outline" onClick={()=>openSection('returns')}>Open returns ↗</button>}
+     {(orderCases(order).some(({kind})=>kind==='return')||order.cancellationReturn)&&<button className="small-outline" onClick={()=>openSection('returns')}>Open exchanges & courier returns ↗</button>}
      {order.issueReport&&<p className="hint">Delivery issue · {returnReasons[order.issueReport.reason]} · {orderRequestStatus(order.issueReport)}{order.issueReport.note?' · '+order.issueReport.note:''}</p>}
     </div>}
     <div className="pick-meta warehouse-order-meta">

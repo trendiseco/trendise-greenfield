@@ -15,7 +15,7 @@ export const adminOrderMethods={
   }).filter(row=>{
    const order=this.orders.get(row.id);
    const matchesStatus={
-    all:true,returns:row.returns.length>0,'needs-review':row.pending>0,
+    all:true,returns:row.returns.length>0||Boolean(order.cancellationReturn),'needs-review':row.pending>0,
     confirmed:['confirmed','paid'].includes(row.status)
    };
    return (matchesStatus[status]??row.status===status)

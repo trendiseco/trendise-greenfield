@@ -1,15 +1,10 @@
+import {posExchangeTerms,returnMs} from '../../../shared/order-policy.mjs';
 import {randomUUID} from 'node:crypto';
 import {DomainError} from './errors.mjs';
 
 const cents = value => Math.round(value * 100);
 const rupees = value => value / 100;
 const periods = ['today', 'week', 'month', 'year', 'fiveYears'];
-const receiptTerms = [
-  'Keep this receipt and the original product tags for return verification.',
-  'Store staff verify the original bill, barcode, quantity and condition before accepting a return.',
-  'Any approved return is valued at the price actually paid, after discounts. Applicable customer rights remain in effect.',
-  'Development receipt. Payment and refund records are simulated.'
-];
 
 export function periodStart(period, now) {
   const date = new Date(now + 19800000);
@@ -159,7 +154,7 @@ export const posMethods = {
       .map(at => new Date(Date.parse(at) + 19800000).getUTCFullYear()).filter(value => value <= currentYear)])].sort((a,b) => b-a);
     const gross = sales.reduce((sum, sale) => sum + cents(sale.quote.total), 0);
     const refunded = storeSales.flatMap(sale => sale.returns || []).filter(entry => inPeriod(entry.at))
-      .reduce((sum, entry) => sum + cents(entry.refund), 0);
+      .reduce((sum, entry) => sum + cents(entry.refund??0), 0);
     return {sales, years, currentYear, gross: rupees(gross), refunded: rupees(refunded), net: rupees(gross - refunded),
       customers: new Set(sales.map(sale => sale.customer?.phone).filter(Boolean)).size};
   },
@@ -176,11 +171,11 @@ export const posMethods = {
       const year = new Date(now + 19800000).getUTCFullYear();
       const scenarios = [
         {days: 0, method: 'Cash', qty: 1, label: 'Regular price'},
-        {days: 0, method: 'UPI', qty: 2, discount: 15, returned: 1, label: '15% off · partial return'},
-        {days: 2, method: 'Card', qty: 1, discount: 20, returned: 1, label: 'Flat price · full return'},
+        {days: 0, method: 'UPI', qty: 2, discount: 15, label: '15% off'},
+        {days: 2, method: 'Card', qty: 1, discount: 20, label: 'Flat price'},
         {year: year-1, method: 'Cash', qty: 2, label: 'Prior-year purchase'},
         {year: year-1, method: 'UPI', qty: 1, discount: 10, label: 'Prior-year discount'},
-        {year: year-2, method: 'Card', qty: 1, returned: 1, label: 'Earlier-year full return'}
+        {year: year-2, method: 'Card', qty: 1, label: 'Earlier-year purchase'}
       ];
       const examples = scenarios.map((scenario,index) => {
         const {sku} = variants[index % variants.length];
@@ -191,16 +186,10 @@ export const posMethods = {
         });
         const at = new Date(scenario.year ? Date.UTC(scenario.year, 5, 15, 6) : now-scenario.days*86400000).toISOString();
         const id = `POS-${String(this.sales.size+index+1).padStart(5,'0')}`;
-        const item = quote.items[0];
-        const returns = scenario.returned ? [{
-          id:randomUUID(), sku, barcode:item.barcode, qty:scenario.returned, reason:'Example · tags intact',
-          refund:item.unitPrice, gst:rupees(Math.round(cents(item.gst)/scenario.qty)), status:'mock_refunded',
-          locationId:'warehouse-hyd', at, example:true
-        }] : [];
         return {id, items:quote.items, quote, locationId:location.id, locationName:location.name,
           customer:{name:'Sample POS Customer',phone:'9999900001'}, staffId:session.userId,
           terms:this.posReceiptTerms(), payment:{method:scenario.method,status:'simulated',reference:`MOCK-${id}`},
-          at, returns, example:scenario.label};
+          at, returns:[], example:scenario.label};
       });
       for (const sale of examples) this.sales.set(sale.id,sale);
       this.event(session,'POS_EXAMPLES_CREATED',location.id);
@@ -236,42 +225,41 @@ export const posMethods = {
       if (!sale || sale.locationId !== location.id) throw new DomainError(404, 'Store bill not found');
       if (sale.example) throw new DomainError(409, 'Sample bills are for reporting and receipt previews');
       const barcode = String(body.barcode ?? '').trim();
+      const replacementBarcode=String(body.replacementBarcode??'').trim();
       const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
       const {qty} = body;
       if (typeof key !== 'string' || key.length < 6 || !Number.isSafeInteger(qty) || qty < 1 || !reason || reason.length > 240) {
         throw new DomainError(400, 'Scan the garment and enter a quantity and reason');
       }
       const eventKey = 'pos-return:' + id + ':' + key;
-      const fingerprint = JSON.stringify({barcode, qty, reason, sellable:body.sellable===true});
+      const fingerprint = JSON.stringify({barcode, replacementBarcode, qty, reason, sellable:body.sellable===true});
       const previous = this.getIdempotent(eventKey, fingerprint);
       if (previous) return previous;
       const item = sale.items.find(line => line.barcode === barcode);
       if (!item) throw new DomainError(400, 'This barcode is not on the original bill');
+      const soldAt=Date.parse(sale.at),now=this.orderNow();
+      if(now<soldAt||now-soldAt>=returnMs)throw new DomainError(409,'Store exchanges are available within 3 days of purchase.');
       if (body.sellable !== true) throw new DomainError(400, 'Confirm the garment is sellable before restocking');
       const returned = (sale.returns || []).filter(entry => entry.sku === item.sku).reduce((sum, entry) => sum + entry.qty, 0);
-      if (qty + returned > item.qty) throw new DomainError(409, 'Return exceeds the remaining quantity on the bill');
+      if (qty + returned > item.qty) throw new DomainError(409, 'Exchange exceeds the remaining quantity on the bill');
       const warehouse = this.locations.find(entry => entry.id === 'warehouse-hyd' && entry.type === 'warehouse');
-      if (!warehouse) throw new DomainError(409, 'Returns warehouse is unavailable');
+      if (!warehouse) throw new DomainError(409, 'Exchange warehouse is unavailable');
       const balances = this.stock[item.sku];
       const before = balances[warehouse.id] || 0;
       if (before + qty > 2147483647) throw new DomainError(409, 'Warehouse stock limit exceeded');
 
-      // Legacy bills stored the promotion at bill level. Allocate it across lines before splitting units.
-      const paid = sale.quote.gstRate === 5 ? cents(item.lineTotal) : (() => {
-        const beforeLine = sale.items.slice(0, sale.items.indexOf(item)).reduce((sum, line) => sum + cents(line.lineTotal), 0);
-        const paidThrough = amount => Math.round(amount * cents(sale.quote.total) / cents(sale.quote.subtotal));
-        return paidThrough(beforeLine + cents(item.lineTotal)) - paidThrough(beforeLine);
-      })();
-      const share = amount => Math.round(amount * (returned + qty) / item.qty) - Math.round(amount * returned / item.qty);
-      const refund = share(paid);
-      const entry = {id: randomUUID(), sku: item.sku, barcode, qty, reason, refund: rupees(refund),
-        gst: rupees(item.gst === undefined ? 0 : share(cents(item.gst))), status: 'mock_refunded',
-        locationId: warehouse.id, at: new Date(this.orderNow()).toISOString(), staffId: session.userId};
+      const {variant}=this.catalogBarcode(replacementBarcode);
+      const replacement=this.exchangeReplacement({...item,qty},variant.sku);
+      const allocations=this.allocations([{sku:replacement.sku,qty}]);
+      const entry={id:randomUUID(),sku:item.sku,barcode,qty,reason,
+        replacement:{...replacement,barcode:variant.barcode},status:'exchanged',
+        locationId:warehouse.id,at:new Date(this.orderNow()).toISOString(),staffId:session.userId};
+      for(const allocation of allocations)this.decrement(allocation,'POS_EXCHANGE_REPLACEMENT',entry.id);
       balances[warehouse.id] = before + qty;
       this.ledger.push({id: randomUUID(), sku: item.sku, locationId: warehouse.id, delta: qty,
-        before, after: before + qty, reason: 'POS_RETURN_RESTOCK', ref: entry.id, at: entry.at});
+        before, after: before + qty, reason: 'POS_EXCHANGE_RESTOCK', ref: entry.id, at: entry.at});
       sale.returns = [...(sale.returns || []), entry];
-      this.event(session, 'POS_RETURN_RESTOCKED', id);
+      this.event(session, 'POS_EXCHANGE_COMPLETED', id);
       const result = {sale: structuredClone(sale), return: entry};
       this.setIdempotent(eventKey, fingerprint, result);
       return result;
@@ -280,8 +268,7 @@ export const posMethods = {
 
   posTermsSettings(session) {
     this.permit(session,'pos.terms');
-    const terms = this.posReceiptTerms();
-    return {text: Array.isArray(terms) ? terms.join('\n') : terms};
+    return {text:this.posTerms??'',policy:posExchangeTerms};
   },
 
   savePosTerms(session, text) {
@@ -295,6 +282,6 @@ export const posMethods = {
   },
 
   posReceiptTerms() {
-    return this.posTerms ?? [...receiptTerms];
+    return [posExchangeTerms,this.posTerms].filter(Boolean).join('\n\n');
   }
 };

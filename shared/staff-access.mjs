@@ -2,15 +2,15 @@ export const permissionGroups = {
  'Store POS': {
   'pos.read':'View register stock and prices', 'pos.bill':'Scan items and save bills',
   'pos.history':'Look up store customer purchase history', 'pos.report':'View store sales reports', 'pos.receipt':'Print or reprint POS receipts',
-  'pos.return':'Record POS returns', 'pos.examples':'Create sample bills',
+  'pos.return':'Complete POS exchanges', 'pos.examples':'Create sample bills',
   'pos.pricing.read':'View and download store pricing', 'pos.promotions':'Manage store promotions', 'pos.prices':'Import store prices',
   'pos.terms':'Manage receipt terms',
  },
  Warehouse: {
   'warehouse.read':'View the picking and returns queue', 'warehouse.inventory':'View warehouse inventory',
   'warehouse.scan':'Verify order-line barcodes', 'warehouse.dispatch':'Record dispatch',
-  'warehouse.deliver':'Record delivery', 'warehouse.receive':'Receive customer returns',
-  'warehouse.inspect':'Inspect returns and record disposition', 'warehouse.cancellation':'Receive cancelled shipments',
+  'warehouse.deliver':'Record delivery', 'warehouse.receive':'Receive original items for exchange',
+  'warehouse.inspect':'Inspect exchange items and create replacements', 'warehouse.cancellation':'Receive cancelled shipments',
  },
  'Catalogue and inventory': {
   'catalog.read':'View products and drafts', 'catalog.edit':'Create and edit product drafts',
@@ -19,7 +19,7 @@ export const permissionGroups = {
   'inventory.receive':'Receive stock', 'inventory.transfer':'Transfer stock',
  },
  'Orders, customers and shipping': {
-  'orders.read':'View and search orders', 'orders.review':'Review return requests and delivery issues',
+  'orders.read':'View and search orders', 'orders.review':'Review exchange requests and delivery issues',
   'shipping.rates':'Check courier rates', 'shipping.export':'Export eligible COD orders to Shiprocket',
   'customers.read':'Search customer purchase history across channels',
   'customers.export':'Export customer purchase data', 'reports.read':'View management and cross-store reports',

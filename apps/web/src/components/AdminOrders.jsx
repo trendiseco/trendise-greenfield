@@ -41,7 +41,7 @@ export default function AdminOrders({token,filter,onFilter,onReviewed,canReview=
   }catch(e){DE(e.message);}finally{B(false);}
  };
  return <section className="staff-panel admin-orders" id="admin-orders">
-  <div className="panel-heading"><div><h2>Orders & returns</h2><p>Find orders, check payments and review customer requests.</p></div><button className="small-outline" disabled={busy} onClick={()=>R(n=>n+1)}>Refresh orders</button></div>
+  <div className="panel-heading"><div><h2>Orders & exchanges</h2><p>Find orders, check payments and review customer requests.</p></div><button className="small-outline" disabled={busy} onClick={()=>R(n=>n+1)}>Refresh orders</button></div>
   <nav className="operations-tabs admin-order-categories" aria-label="Order lists">
    {categories.map(key=><button className="admin-order-category" key={key} type="button" aria-pressed={filter===key} disabled={busy} onClick={()=>onFilter(key)}>{orderListLabels[key]}</button>)}
   </nav>
@@ -51,7 +51,7 @@ export default function AdminOrders({token,filter,onFilter,onReviewed,canReview=
     <button className="button button-dark" type="submit">Search</button>
     <label>Order list<select value={filter} disabled={busy} onChange={e=>onFilter(e.target.value)}>{Object.entries(orderListLabels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
    </form>
-   {listError?<p className="error-box" role="alert">{listError}</p>:!list?<p role="status">Loading orders…</p>:!list.orders.length?<p>{filter==='returns'?'No returns match this search.':'No orders match these filters.'}</p>:<>
+   {listError?<p className="error-box" role="alert">{listError}</p>:!list?<p role="status">Loading orders…</p>:!list.orders.length?<p>{filter==='returns'?'No exchanges or cancellation returns match this search.':'No orders match these filters.'}</p>:<>
     <p className="hint">{list.total} {list.total===1?'order':'orders'}</p>
     {list.orders.map(row=><button type="button" className={`warehouse-order ${selected===row.id?'active':''}`} aria-pressed={selected===row.id} key={row.id} disabled={busy} onClick={()=>{SEL(row.id);V(null);N('');}}><span><strong>{row.id}</strong><small>{date(row.placedAt)} · {row.itemCount} items</small><small>{paymentLabels[row.paymentMethod]} · {cash(row.total)}</small></span><span><span className="order-status">{orderStatusLabels[row.status]||row.status}</span>{filter==='returns'&&[...new Set(row.returns.map(orderRequestStatus))].map(status=><small key={status}>{status}</small>)}{row.pending>0&&<small>{row.pending} to review</small>}</span></button>)}
     {list.pageCount>1&&<div className="button-row"><button className="small-outline" disabled={list.page<=1} onClick={()=>P(list.page-1)}>Previous</button><span>Page {list.page} of {list.pageCount}</span><button className="small-outline" disabled={list.page>=list.pageCount} onClick={()=>P(list.page+1)}>Next</button></div>}
@@ -71,11 +71,12 @@ export default function AdminOrders({token,filter,onFilter,onReviewed,canReview=
     <p className="hint">Placed {date(detail.placedAt)}{detail.deliveredAt&&` · Delivered ${date(detail.deliveredAt)}`}</p>
     <p className="hint">Terms: {detail.acceptedPolicyVersion||'Not recorded'}{detail.acceptedAt&&` · Accepted ${date(detail.acceptedAt)}`}</p>
     <h4>Items</h4><ul>{detail.items.map(item=><li key={item.sku}>{item.name} · {item.color} / {item.size} × {item.qty} <small>({item.sku})</small></li>)}</ul>
-    {detail.deliveredAt&&<p className="notice-box">Customer 3-day return deadline: {date(orderEligibility(detail).returnUntil)}</p>}<h4>Customer requests</h4>
-    {!orderCases(detail).length&&<p>No return requests or delivery issues.</p>}
+    {detail.deliveredAt&&<p className="notice-box">Customer 3-day exchange deadline: {date(orderEligibility(detail).returnUntil)}</p>}<h4>Customer requests</h4>
+    {!orderCases(detail).length&&<p>No exchange requests or delivery issues.</p>}
     {orderCases(detail).map(({kind,key,request})=><article className="admin-order-case" key={key}>
-     <strong>{kind==='return'?'Return request':'Delivery issue'} · {request.sku}</strong>
+     <strong>{kind==='return'?'Exchange request':'Delivery issue'} · {request.sku}</strong>
      <p>{returnReasons[request.reason]||request.reason} · {orderRequestStatus(request)}</p>
+     {request.replacement&&<p>Replacement · {request.replacement.color} / {request.replacement.size} · {request.replacement.sku}</p>}
      <ReturnOutcome inspection={request.inspection} staff/>
      {request.note&&<p>{request.note}</p>}
      {request.review&&<p><strong>Decision:</strong> {request.review.note} <small>({date(request.review.decidedAt)})</small></p>}
@@ -83,7 +84,7 @@ export default function AdminOrders({token,filter,onFilter,onReviewed,canReview=
      {review?.caseKey===key&&<form className="admin-order-review" onSubmit={submit}>
       <label>Decision<select value={review.decision} onChange={e=>V({...review,decision:e.target.value})}><option value="approved">Approve for follow-up</option><option value="rejected">Decline</option></select></label>
       <label>Reason shown to customer<textarea required minLength={5} placeholder="e.g. Approved for inspection because the item arrived damaged." maxLength={500} value={review.note} onChange={e=>V({...review,note:e.target.value})}/></label>
-      <p className="hint">A decision does not book a pickup, issue a refund, or restore stock.</p>
+      <p className="hint">Approval allows Warehouse to receive and inspect the original item.</p>
       <div className="button-row"><button className="button button-dark" disabled={busy||review.note.trim().length<5}>{busy?'Saving…':'Save decision'}</button><button className="small-outline" type="button" disabled={busy} onClick={()=>V(null)}>Back</button></div>
       <ActionFeedback error={detailError} pending={busy?'Saving decision…':''}/>
      </form>}{decisionKey===key&&!review&&<ActionFeedback success={notice}/>}

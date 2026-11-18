@@ -1,6 +1,6 @@
 export const cancellationMs=12*60*60*1000;
 export const returnMs=72*60*60*1000;
-export const paymentLabels={cod:'Cash on delivery',card:'Credit / debit card',phonepe:'PhonePe (UPI)',split:'30% upfront, 70% cash on delivery'};
+export const paymentLabels={exchange:'Exchange replacement',cod:'Cash on delivery',card:'Credit / debit card',phonepe:'PhonePe (UPI)',split:'30% upfront, 70% cash on delivery'};
 export const returnReasons={fit:'Size or fit',preference:'Changed my mind',damaged:'Arrived damaged or defective',wrong:'Wrong or missing item',description:'Not as described',late:'Late delivery'};
 export const returnConditions=[
  'Original brand, price and seal tags are attached and intact, where supplied.',
@@ -17,7 +17,7 @@ export const policySectionsV2=[
  ['Review, refunds and exchanges','Return requests are reviewed before a refund is approved. This preview does not book pickups, issue real refunds or promise exchanges. Discounts are reflected in the amount actually paid; no real payment will be collected in this preview.'],
  ['Delivery, privacy and support','Use accurate contact and delivery details. Delivery and tracking are simulated. Order details are used for this test workflow. Use My Orders to report an issue. Live seller details, privacy notices and customer care contacts must be provided before commercial launch.']
 ];
-export const policyRulesVersion=5;
+export const policyRulesVersion=6;
 export const policyEffectiveDate='2026-11-16';
 const policySectionsV3=[
  ['Acceptance and purchase eligibility',
@@ -79,18 +79,33 @@ const policySectionsV3=[
 const policySectionsV4=policySectionsV3.map(section=>section[0]==='Payment, security and payment failures'
  ? [...section,'Eligible postal areas at least 1,000 km from PIN 501505 by straight-line distance may pay 30% of the final total upfront and the remaining balance on delivery. In this preview both payments are simulated. An eligible cancellation refunds only the simulated upfront amount.']
  : section);
-export const policySections=policySectionsV4.map(section=>section[0]==='Cancellation within 12 hours'
+const policySectionsV5=policySectionsV4.map(section=>section[0]==='Cancellation within 12 hours'
  ? [section[0], 'Cancel from My Orders within 12 hours of placement, while the order is undelivered. Warehouse can dispatch as soon as picking is complete. If the parcel has left, TRENDISE records the cancellation and follows up with the courier for return to origin. If it arrives, refuse delivery. Returned pieces become available after warehouse receipt and inspection. There is no cancellation fee in this preview. Prepaid refunds are simulated.']
  : section);
+export const posExchangeTerms='Change-of-mind purchases are exchange only within 3 days of purchase. Bring the original receipt and the unused garment with original tags intact. Exchange is subject to inspection and stock of another size or colour of the same product. No change-of-mind refund applies. Statutory consumer rights apply. This policy takes precedence over any conflicting receipt notes.';
+export const policySections=policySectionsV5.flatMap(section=>{
+ switch(section[0]){
+  case 'Change-of-mind returns within 3 days':
+   return [['Change-of-mind exchanges within 3 days',
+    'Website purchases qualify for an exchange request within 3 days of delivery. Store purchases qualify within 3 days of purchase with the original receipt.',
+    'Choose an available size or colour of the same product. Exchanges depend on inspection and stock at completion. A completed exchange has no additional charge. Change-of-mind purchases are exchange only.']];
+  case 'Return condition checklist':return [['Exchange condition checklist',...returnConditions]];
+  case 'Return eligibility, inspection and pickup':
+   return [['Exchange inspection and fulfilment','Request an exchange in My Orders or bring the item to the store. For website orders, approval and garment inspection are required before the replacement can dispatch. The development store does not book courier pickups.']];
+  case 'Exchanges, replacements and refunds':
+   return [['Delivery issues and consumer rights','Report defective, incorrect, missing, misdescribed or late items separately. The exchange-only change-of-mind policy does not limit any remedies required by applicable law.']];
+  default:return [section];
+ }
+});
 export function policyDocument(policy){
- const sections=policy.sections??(policy.rulesVersion===policyRulesVersion?policySections:policy.rulesVersion===4?policySectionsV4:policy.rulesVersion===3?policySectionsV3:policy.rulesVersion===2?policySectionsV2:[]);
+ const sections=policy.sections??(policy.rulesVersion===policyRulesVersion?policySections:policy.rulesVersion===5?policySectionsV5:policy.rulesVersion===4?policySectionsV4:policy.rulesVersion===3?policySectionsV3:policy.rulesVersion===2?policySectionsV2:[]);
  return structuredClone({...policy,sections});
 }
 export function orderEligibility(order,now=Date.now()){
  const placed=Date.parse(order.placedAt),delivered=Date.parse(order.deliveredAt);
  return {cancelUntil:Number.isFinite(placed)?new Date(placed+cancellationMs).toISOString():null,
- canCancel:['paid','confirmed','picking','shipped'].includes(order.status)&&!order.deliveredAt&&now>=placed&&now<placed+cancellationMs,
+ canCancel:!order.exchangeFor&&['paid','confirmed','picking','shipped'].includes(order.status)&&!order.deliveredAt&&now>=placed&&now<placed+cancellationMs,
  returnUntil:Number.isFinite(delivered)?new Date(delivered+returnMs).toISOString():null,
- canReturn:order.status==='delivered'&&now>=delivered&&now<delivered+returnMs&&order.items.some(i=>!(order.returnRequests||[order.returnRequest].filter(Boolean)).some(r=>r.sku===i.sku)),
+ canReturn:!order.exchangeFor&&order.status==='delivered'&&now>=delivered&&now<delivered+returnMs&&order.items.some(i=>!(order.returnRequests||[order.returnRequest].filter(Boolean)).some(r=>r.sku===i.sku)),
  canReportIssue:['shipped','delivered'].includes(order.status)&&!order.issueReport};
 }

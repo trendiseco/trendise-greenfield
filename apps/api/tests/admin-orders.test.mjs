@@ -12,7 +12,7 @@ test('admin queue and decisions enforce permissions and preserve order and stock
  c.clock=()=>new Date(Date.parse(order.placedAt)+cancellationMs);
  await c.warehouseVerify(warehouse,orderId,`PICK-${orderId}-${v.sku}`,`PICK-${orderId}-${v.sku}`);
  await c.dispatch(warehouse,orderId);await c.markDelivered(warehouse,orderId);
- await c.requestOrderReturn(customer,orderId,{sku:v.sku,reason:'fit',conditionConfirmed:true});
+ await c.requestOrderReturn(customer,orderId,{sku:v.sku,replacementSku:c.product(v.sku).product.variants[1].sku,reason:'fit',conditionConfirmed:true});
  const query=new URLSearchParams({status:'needs-review',q:'test shopper'});
  assert.throws(()=>c.adminOrderList(customer,query),{status:403});
  assert.throws(()=>c.adminOrderDetail(warehouse,orderId),{status:403});
@@ -52,7 +52,7 @@ test('admin queue and decisions enforce permissions and preserve order and stock
  assert.equal(c.available(v.sku),stock);
 });
 
-test('return inspection settles discounted lines once and isolates failed stock',async()=>{
+test('exchange inspection creates one replacement and isolates failed stock',async()=>{
  const c=new Commerce(),customer={role:'customer',phone:'9876543210'},warehouse={role:'warehouse',userId:'warehouse'},admin={role:'admin'};
  const [first,second]=c.products[0].variants;
  const items=[{sku:first.sku,qty:1},{sku:second.sku,qty:2}];
@@ -67,27 +67,41 @@ test('return inspection settles discounted lines once and isolates failed stock'
  const pass={sku:first.sku,decision:'pass',reason:'Tags intact and garment unused.'};
  await assert.rejects(c.inspectOrderReturn(warehouse,orderId,pass),{status:409});
  for(const variant of [first,second]){
-  await c.requestOrderReturn(customer,orderId,{sku:variant.sku,reason:'fit',conditionConfirmed:true});
+  await c.requestOrderReturn(customer,orderId,{sku:variant.sku,replacementSku:c.products[0].variants[2].sku,reason:'fit',conditionConfirmed:true});
   await c.reviewOrderCase(admin,orderId,{caseKey:'return:'+variant.sku,decision:'approved',note:'Approved for inspection.'});
   await c.receiveOrderReturn(warehouse,orderId,{sku:variant.sku,barcode:variant.barcode,quantity:items.find(i=>i.sku===variant.sku).qty});
  }
  const firstStock=c.available(first.sku),secondStock=c.available(second.sku);
  await assert.rejects(c.inspectOrderReturn(customer,orderId,pass),{status:403});
  await assert.rejects(c.inspectOrderReturn(warehouse,orderId,{...pass,reason:' '}),{status:400});
+ const replacementSku=c.products[0].variants[2].sku;
+ const replacementBalances=c.stock[replacementSku];
+ const replacementStock=replacementBalances['warehouse-hyd'];
+ replacementBalances['warehouse-hyd']=0;
+ await assert.rejects(c.inspectOrderReturn(warehouse,orderId,pass),{status:409});
+ assert.equal(c.available(first.sku),firstStock);
+ assert.equal(c.orders.size,1);
+ assert.equal(c.orders.get(orderId).returnRequests[0].inspection,undefined);
+ replacementBalances['warehouse-hyd']=replacementStock;
  const [settled,retried]=await Promise.all([c.inspectOrderReturn(warehouse,orderId,pass),c.inspectOrderReturn(warehouse,orderId,pass)]);
  const inspection=settled.returnRequests[0].inspection;
  assert.deepEqual(retried.returnRequests[0].inspection,inspection);
- assert.equal(inspection.refund.amount,Math.round(order.quote.total*100/3)/100);
- assert.equal(inspection.points.restored,3);
- assert.equal(inspection.points.reversed,Math.round(order.quote.earnPoints/3));
+ assert.equal(inspection.refund,undefined);
+ const replacement=c.orders.get(inspection.replacementOrderId);
+ assert.equal(replacement.quote.total,0);
+ assert.equal(replacement.payment.status,'no_payment_due');
+ assert.equal(replacement.items[0].sku,c.products[0].variants[2].sku);
+ assert.equal(c.available(replacement.items[0].sku),5);
+ assert.ok(c.warehouseQueue(warehouse).some(row=>row.id===replacement.id));
+ assert.equal(c.customer(customer).points,100-order.quote.redeemPoints+order.quote.earnPoints);
  assert.equal(c.available(first.sku),firstStock+1);
  await assert.rejects(c.inspectOrderReturn(warehouse,orderId,{...pass,decision:'fail'}),{status:409});
  const failed=await c.inspectOrderReturn(warehouse,orderId,{sku:second.sku,decision:'fail',reason:'Both garments have visible stains.'});
  assert.equal(failed.returnRequests[1].inspection.disposition,'quarantined');
  assert.equal(failed.returnRequests[1].inspection.quantity,2);
- assert.deepEqual(failed.returnRequests[1].inspection.refund,{amount:0,status:'not_due'});
+ assert.equal(failed.returnRequests[1].inspection.replacementOrderId,undefined);
  assert.equal(c.available(second.sku),secondStock);
- assert.equal(c.audit.filter(event=>event.type==='RETURN_INSPECTED').length,2);
+ assert.equal(c.audit.filter(event=>event.type==='EXCHANGE_INSPECTED').length,2);
  assert.deepEqual(c.ordersFor(customer)[0].returnRequests,c.adminOrderDetail(admin,orderId).returnRequests);
- assert.deepEqual(adminDashboard(c).inspections,{passed:1,failed:1,quarantinedUnits:2,refunds:inspection.refund.amount});
+ assert.deepEqual(adminDashboard(c).inspections,{passed:1,failed:1,quarantinedUnits:2,refunds:0});
 });

@@ -1,4 +1,5 @@
 'use client';
+import {posExchangeTerms} from '../../../../shared/order-policy.mjs';
 import ActionFeedback from './ActionFeedback';
 import {useEffect,useState} from 'react';
 import {api} from '../lib/api';
@@ -26,10 +27,10 @@ export default function PosTerms({token}) {
 
  return <section className="staff-panel pos-history">
   <h2>Store POS Terms & Conditions</h2>
-  <p>New bills print this text as entered, including line breaks. Reprints use the terms saved with the original bill.</p>
+  <p>{posExchangeTerms}</p><p>Additional receipt notes print below this policy on new bills. Reprints use the original receipt terms.</p>
   {text!==null&&<form className="cms-fields" onSubmit={save}>
    <label className="cms-field cms-full">Receipt terms<textarea rows={10} required maxLength={6000} value={text} disabled={saving}
-    placeholder="e.g. Keep the original receipt and product tags for returns."
+    placeholder="e.g. Keep the original receipt and product tags for exchanges."
     onChange={event=>{setText(event.target.value);setNotice('');}}/></label>
    <div><button disabled={saving||!text.trim()}>{saving?'Saving…':'Save receipt terms'}</button><ActionFeedback error={error} success={notice} pending={saving?'Saving receipt terms…':''}/></div>
   </form>}

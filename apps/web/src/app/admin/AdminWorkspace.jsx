@@ -17,7 +17,7 @@ import {orderListLabels} from '../../../../../shared/admin-orders.mjs';
 import {StaffTabs,useStaffSection} from '../../components/StaffWorkspace';
 const sections=[
  ['admin-dashboard','Dashboard',['reports.read']],
- ['admin-orders','Orders & returns',['orders.read']],
+ ['admin-orders','Orders & exchanges',['orders.read']],
  ['admin-customers','Customer search',['customers.read']],
  ['admin-customer-extract','Data extract',['customers.export']],
  ['admin-products','Products',['catalog.read']],

@@ -32,16 +32,16 @@ test('dispatch can happen immediately; returns use delivery timestamp and checkl
  await c.warehouseVerify(warehouse,orderId,`PICK-${orderId}-${v.sku}`,`PICK-${orderId}-${v.sku}`);
  await c.dispatch(warehouse,orderId);advance(cancellationMs);
  await assert.rejects(c.cancelOrder(customer,orderId),{status:409});
- await assert.rejects(c.requestOrderReturn(customer,orderId,{sku:v.sku,reason:'fit',conditionConfirmed:true}),{status:409});
+ await assert.rejects(c.requestOrderReturn(customer,orderId,{sku:v.sku,replacementSku:c.product(v.sku).product.variants[1].sku,reason:'fit',conditionConfirmed:true}),{status:409});
  const delivered=await c.markDelivered(warehouse,orderId);assert.equal(delivered.payment.status,'mock_collected');
  await assert.rejects(c.requestOrderReturn(customer,orderId,{sku:v.sku,reason:'fit'}),{status:400});
- advance(returnMs);await assert.rejects(c.requestOrderReturn(customer,orderId,{sku:v.sku,reason:'fit',conditionConfirmed:true}),{status:409});
+ advance(returnMs);await assert.rejects(c.requestOrderReturn(customer,orderId,{sku:v.sku,replacementSku:c.product(v.sku).product.variants[1].sku,reason:'fit',conditionConfirmed:true}),{status:409});
  const report=await c.requestOrderReturn(customer,orderId,{sku:v.sku,reason:'damaged',note:'Arrived with a torn seam.'});assert.equal(report.issueReport.status,'requested');
  const second=await c.placeOrder(customer,{...body,paymentMethod:'card'},'second-return');
  await c.warehouseVerify(warehouse,second.orderId,`PICK-${second.orderId}-${v.sku}`,`PICK-${second.orderId}-${v.sku}`);
  advance(cancellationMs);await c.dispatch(warehouse,second.orderId);await c.markDelivered(warehouse,second.orderId);advance(returnMs-1);
- const returned=await c.requestOrderReturn(customer,second.orderId,{sku:v.sku,reason:'fit',conditionConfirmed:true});assert.equal(returned.returnRequests[0].status,'requested');
- await assert.rejects(c.requestOrderReturn(customer,second.orderId,{sku:v.sku,reason:'fit',conditionConfirmed:true}),{status:409});
+ const returned=await c.requestOrderReturn(customer,second.orderId,{sku:v.sku,replacementSku:c.product(v.sku).product.variants[1].sku,reason:'fit',conditionConfirmed:true});assert.equal(returned.returnRequests[0].status,'requested');
+ await assert.rejects(c.requestOrderReturn(customer,second.orderId,{sku:v.sku,replacementSku:c.product(v.sku).product.variants[1].sku,reason:'fit',conditionConfirmed:true}),{status:409});
 });
 test('cancel after dispatch holds stock until inspected and restocks only sellable pieces once',async()=>{
  const {c,v,body,advance}=setup(),before=c.available(v.sku);

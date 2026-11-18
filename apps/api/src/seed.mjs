@@ -27,7 +27,7 @@ export function generateMockStock(products=initialProducts) {
   }
   return stock;
 }
-export const policies = { version:'TC-DEV-5.0', rulesVersion:policyRulesVersion, effectiveDate:policyEffectiveDate, title:'TRENDISE Development Terms & Conditions', text:[
+export const policies = { version:'TC-DEV-6.0', rulesVersion:policyRulesVersion, effectiveDate:policyEffectiveDate, title:'TRENDISE Development Terms & Conditions', text:[
   'This is a fictional Development-only checkout. No real payment, shipment or SMS will occur.',
   'Products, prices, discounts and availability shown here are sample data and not commercial offers.',
   'Your entered delivery address is used only by this local demonstration and is not transmitted to a courier.',

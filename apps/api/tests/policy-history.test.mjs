@@ -9,7 +9,7 @@ test('policy upgrades preserve the previous text; new orders capture consent and
  restore(c,legacy);
  assert.equal(c.policyHistory[legacy.version].text[0],'Old store notice');
  assert.ok(c.policyHistory[legacy.version].sections.length>0);
- assert.notEqual(c.version,legacy.version);assert.equal(c.policy.rulesVersion,5);
+ assert.notEqual(c.version,legacy.version);assert.equal(c.policy.rulesVersion,6);
  const sku=c.products[0].variants[0].sku;
  const body={items:[{sku,qty:1}],paymentMethod:'cod',address:{name:'Demo Buyer',phone:customer.phone,line1:'10 Test Road',city:'Hyderabad',state:'Telangana',pincode:'500001'}};
  await assert.rejects(c.placeOrder(customer,{...body,acceptedPolicyVersion:legacy.version},'policy-old'),{code:'TERMS_REQUIRED'});

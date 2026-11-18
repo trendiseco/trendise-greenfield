@@ -1,5 +1,5 @@
 export const orderStatusLabels={paid:'Confirmed',confirmed:'Confirmed',picking:'Processing',shipped:'Shipped',delivered:'Delivered',cancelled:'Cancelled'};
-export const orderListLabels={all:'All orders',returns:'Returns',cancelled:'Cancelled',shipped:'Shipped',picking:'Processing','needs-review':'Needs review',confirmed:'Confirmed',delivered:'Delivered'};
+export const orderListLabels={all:'All orders',returns:'Exchanges & courier returns',cancelled:'Cancelled',shipped:'Shipped',picking:'Processing','needs-review':'Needs review',confirmed:'Confirmed',delivered:'Delivered'};
 export const reviewStatusLabels={requested:'Awaiting review',approved:'Approved for follow-up',rejected:'Declined'};
 export function orderCases(order){
  return [
