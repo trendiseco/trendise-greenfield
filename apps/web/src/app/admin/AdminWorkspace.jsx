@@ -38,6 +38,14 @@ export default function AdminWorkspace({defaultSection='admin-dashboard'}) {
  const [requestedSection,openSection]=useStaffSection(defaultSection);
  const [error,setError]=useState('');
  const [notice,setNotice]=useState('');
+ const [refreshing,setRefreshing]=useState(false),[refreshVersion,setRefreshVersion]=useState(0);
+ const [refreshNotice,setRefreshNotice]=useState('');
+ const refreshInProgress=useRef(false);
+ useEffect(()=>{
+  if(!refreshNotice)return;
+  const timer=setTimeout(()=>setRefreshNotice(''),5000);
+  return()=>clearTimeout(timer);
+ },[refreshNotice]);
  const [catalog,setCatalog]=useState({products:[],drafts:{},approvals:[]});
  const [summary,setSummary]=useState(null);
  const [editor,setEditor]=useState(null);
@@ -82,6 +90,23 @@ export default function AdminWorkspace({defaultSection='admin-dashboard'}) {
    can('users.manage')&&api('/api/admin/access',options).then(setAccess),
   ]);
  };
+ const refreshPage=async()=>{
+  if(refreshInProgress.current||saveInProgress.current||productBusy)return;
+  refreshInProgress.current=true;
+  setRefreshing(true);setRefreshNotice('');setError('');setNotice('');setFeedbackAt('');
+  try{
+   await refresh();
+   const dashboard=can('reports.read')?await api('/api/admin/summary?period=today',{token}):null;
+   setPeriod('today');
+   setFilteredSummary(dashboard?{period:'today',data:dashboard}:null);
+   closeEditor();
+   setCategoryName('');
+   setReceipt({sku:'',qty:1,reason:'Fictional opening stock'});
+   setRefreshVersion(version=>version+1);
+   setRefreshNotice('Refresh successful. Selections and filters reset to defaults.');
+  }catch(error){setError(error.message);}
+  finally{refreshInProgress.current=false;setRefreshing(false);}
+ };
  useEffect(()=>{run(refresh);},[token,grants.join(',')]);
  const post=(path,body)=>api(path,{token,method:'POST',body:JSON.stringify(body)});
  const saveAccess=(key,pending,path,body,success,onDone)=>runSave(key,pending,async()=>{
@@ -99,9 +124,11 @@ export default function AdminWorkspace({defaultSection='admin-dashboard'}) {
  return <main className="staff-shell m02-management operations-workspace operations-admin">
  <div className="staff-page-header"><div><div className="eyebrow">SIGNED IN AS {profile.userId} · {role}</div>
  <h1>{defaultSection==='admin-staff'?'Super Admin':'Admin'} <em>portal.</em></h1></div>
- <div className="button-row"><button onClick={()=>{setFeedbackAt('');run(refresh);}}>Refresh</button>
+ <div className="button-row"><button disabled={refreshing||!!saving||!!productBusy} onClick={refreshPage}>{refreshing?'Refreshing…':'Refresh'}</button>
  <button disabled={!!saving||!!productBusy} onClick={logout}>Sign out</button></div></div>
+ <ActionFeedback success={refreshNotice} pending={refreshing?'Refreshing data…':''}/>
  {!feedbackAt&&<ActionFeedback error={error} success={notice}/>}
+ <div key={refreshVersion} aria-busy={refreshing}>
  <StaffTabs label="Management sections" tabs={tabs} active={section} onChange={openSection}/>
  <div className="operations-pane" hidden={section!=='admin-dashboard'}><label>Dashboard period<select value={period} onChange={event=>setPeriod(event.target.value)}>
    {Object.entries({today:'Today',week:'This week',month:'This month',year:'This year',fiveYears:'Past 5 years'}).map(([value,label])=><option key={value} value={value}>{label}</option>)}
@@ -175,5 +202,5 @@ export default function AdminWorkspace({defaultSection='admin-dashboard'}) {
   </>}
   <h3>Recent stock movements</h3>
   {inventory?.ledger.slice(-10).reverse().map(l=><p key={l.id}>{l.sku} · {l.delta} · {l.reason}</p>)}
- </section></main>;
+ </section></div></main>;
 }
