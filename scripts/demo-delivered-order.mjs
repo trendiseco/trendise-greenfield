@@ -11,7 +11,7 @@ try{
  const result=await c.unit(async()=>{
   const existing=[...c.orders.values()].find(o=>o.demoScenario===scenario&&o.phone===phone&&orderEligibility(o,c.orderNow()).canReturn);
   if(existing&&!completeReturn)return existing;
-  const variant=c.products.flatMap(p=>p.websiteVisible===false?[]:p.variants).find(v=>v.active!==false&&c.available(v.sku)>0&&(!completeReturn||c.exchangeOptions({sku:v.sku,qty:1}).length));
+  const variant=c.products.flatMap(p=>p.websiteVisible===false?[]:p.variants).find(v=>v.active!==false&&c.available(v.sku)>0&&(!completeReturn||c.exchangeChoices({sku:v.sku,qty:1,unitPrice:v.price},{}).sameProduct));
   if(!variant)throw new Error('No eligible website stock available for the demo order');
   const customer={role:'customer',phone},warehouse={role:'warehouse',userId:'warehouse'};
   const now=Date.now();
@@ -23,7 +23,7 @@ try{
   await c.dispatch(warehouse,orderId);await c.markDelivered(warehouse,orderId);
   const order=c.orders.get(orderId);order.demoScenario=scenario;
   if(completeReturn){
-   const replacement=c.exchangeOptions({sku:variant.sku,qty:1})[0];
+   const replacement=c.exchangeChoices(order.items[0],order.quote).options[0];
    await c.requestOrderReturn(customer,orderId,{sku:variant.sku,replacementSku:replacement.sku,reason:'fit',conditionConfirmed:true,note:'Demo exchange: the fit was not right.'});
    await c.reviewOrderCase({role:'admin',userId:'admin'},orderId,{caseKey:'return:'+variant.sku,decision:'approved',note:'Your exchange is approved. The warehouse will check the item when it arrives.'});
    await c.receiveOrderReturn(warehouse,orderId,{sku:variant.sku,barcode:variant.barcode,quantity:1});

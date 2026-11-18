@@ -153,9 +153,11 @@ export const posMethods = {
     const years = [...new Set([currentYear, ...storeSales.flatMap(sale => [sale.at, ...(sale.returns || []).map(entry => entry.at)])
       .map(at => new Date(Date.parse(at) + 19800000).getUTCFullYear()).filter(value => value <= currentYear)])].sort((a,b) => b-a);
     const gross = sales.reduce((sum, sale) => sum + cents(sale.quote.total), 0);
-    const refunded = storeSales.flatMap(sale => sale.returns || []).filter(entry => inPeriod(entry.at))
-      .reduce((sum, entry) => sum + cents(entry.refund??0), 0);
-    return {sales, years, currentYear, gross: rupees(gross), refunded: rupees(refunded), net: rupees(gross - refunded),
+    const exchanges=storeSales.flatMap(sale=>sale.returns||[]).filter(entry=>inPeriod(entry.at));
+    const refunded=exchanges.reduce((sum,entry)=>sum+cents(entry.refund??0),0);
+    const exchangePayments=exchanges.reduce((sum,entry)=>sum+cents(entry.payment?.amount??0),0);
+    return {sales, years, currentYear, gross:rupees(gross+exchangePayments), refunded:rupees(refunded),
+      net:rupees(gross+exchangePayments-refunded),
       customers: new Set(sales.map(sale => sale.customer?.phone).filter(Boolean)).size};
   },
 
@@ -226,33 +228,48 @@ export const posMethods = {
       if (sale.example) throw new DomainError(409, 'Sample bills are for reporting and receipt previews');
       const barcode = String(body.barcode ?? '').trim();
       const replacementBarcode=String(body.replacementBarcode??'').trim();
+      const addOnBarcode=String(body.addOnBarcode??'').trim();
+      const {action,expectedDifference,paymentMethod}=body;
+      const preview=action==='options'||action==='quote';
       const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
       const {qty} = body;
-      if (typeof key !== 'string' || key.length < 6 || !Number.isSafeInteger(qty) || qty < 1 || !reason || reason.length > 240) {
+      if (!Number.isSafeInteger(qty)||qty<1||qty>25||(!preview&&(typeof key!=='string'||key.length<6||!reason||reason.length>240))) {
         throw new DomainError(400, 'Scan the garment and enter a quantity and reason');
       }
       const eventKey = 'pos-return:' + id + ':' + key;
-      const fingerprint = JSON.stringify({barcode, replacementBarcode, qty, reason, sellable:body.sellable===true});
-      const previous = this.getIdempotent(eventKey, fingerprint);
+      const fingerprint = JSON.stringify({barcode,replacementBarcode,qty,reason,sellable:body.sellable===true,...(addOnBarcode?{addOnBarcode}:{}),expectedDifference,paymentMethod});
+      const previous = preview?null:this.getIdempotent(eventKey, fingerprint);
       if (previous) return previous;
       const item = sale.items.find(line => line.barcode === barcode);
       if (!item) throw new DomainError(400, 'This barcode is not on the original bill');
       const soldAt=Date.parse(sale.at),now=this.orderNow();
       if(now<soldAt||now-soldAt>=returnMs)throw new DomainError(409,'Store exchanges are available within 3 days of purchase.');
-      if (body.sellable !== true) throw new DomainError(400, 'Confirm the garment is sellable before restocking');
       const returned = (sale.returns || []).filter(entry => entry.sku === item.sku).reduce((sum, entry) => sum + entry.qty, 0);
       if (qty + returned > item.qty) throw new DomainError(409, 'Exchange exceeds the remaining quantity on the bill');
+      const choices=this.exchangeChoices({...item,qty,lineTotal:rupees(cents(item.unitPrice)*qty)},sale.quote,false);
+      if(action==='options')return choices;
+      const {variant}=this.catalogBarcode(replacementBarcode);
+      const addOnSku=addOnBarcode?this.catalogBarcode(addOnBarcode).variant.sku:undefined;
+      const exchange=this.exchangeQuote(choices,variant.sku,addOnSku);
+      if(action==='quote')return exchange;
+      if(exchange.shortfall)throw new DomainError(409,'Add another product to cover the remaining exchange credit.');
+      if((exchange.difference>0||expectedDifference!==undefined)&&expectedDifference!==exchange.difference){
+        throw new DomainError(409,'Check the updated exchange price before completing.');
+      }
+      if(exchange.difference>0&&!['Cash','UPI','Card'].includes(paymentMethod)){
+        throw new DomainError(400,'Select the simulated payment method for the difference.');
+      }
+      if(body.sellable!==true)throw new DomainError(400,'Confirm the garment is sellable before restocking');
       const warehouse = this.locations.find(entry => entry.id === 'warehouse-hyd' && entry.type === 'warehouse');
       if (!warehouse) throw new DomainError(409, 'Exchange warehouse is unavailable');
       const balances = this.stock[item.sku];
       const before = balances[warehouse.id] || 0;
       if (before + qty > 2147483647) throw new DomainError(409, 'Warehouse stock limit exceeded');
 
-      const {variant}=this.catalogBarcode(replacementBarcode);
-      const replacement=this.exchangeReplacement({...item,qty},variant.sku);
-      const allocations=this.allocations([{sku:replacement.sku,qty}]);
+      const allocations=this.allocations(exchange.lines);
       const entry={id:randomUUID(),sku:item.sku,barcode,qty,reason,
-        replacement:{...replacement,barcode:variant.barcode},status:'exchanged',
+        replacement:exchange.lines[0],exchange,status:'exchanged',
+        ...(exchange.difference?{payment:{method:paymentMethod,status:'simulated',amount:exchange.difference}}:{}),
         locationId:warehouse.id,at:new Date(this.orderNow()).toISOString(),staffId:session.userId};
       for(const allocation of allocations)this.decrement(allocation,'POS_EXCHANGE_REPLACEMENT',entry.id);
       balances[warehouse.id] = before + qty;

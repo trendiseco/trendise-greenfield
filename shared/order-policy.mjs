@@ -17,7 +17,7 @@ export const policySectionsV2=[
  ['Review, refunds and exchanges','Return requests are reviewed before a refund is approved. This preview does not book pickups, issue real refunds or promise exchanges. Discounts are reflected in the amount actually paid; no real payment will be collected in this preview.'],
  ['Delivery, privacy and support','Use accurate contact and delivery details. Delivery and tracking are simulated. Order details are used for this test workflow. Use My Orders to report an issue. Live seller details, privacy notices and customer care contacts must be provided before commercial launch.']
 ];
-export const policyRulesVersion=6;
+export const policyRulesVersion=7;
 export const policyEffectiveDate='2026-11-16';
 const policySectionsV3=[
  ['Acceptance and purchase eligibility',
@@ -82,8 +82,9 @@ const policySectionsV4=policySectionsV3.map(section=>section[0]==='Payment, secu
 const policySectionsV5=policySectionsV4.map(section=>section[0]==='Cancellation within 12 hours'
  ? [section[0], 'Cancel from My Orders within 12 hours of placement, while the order is undelivered. Warehouse can dispatch as soon as picking is complete. If the parcel has left, TRENDISE records the cancellation and follows up with the courier for return to origin. If it arrives, refuse delivery. Returned pieces become available after warehouse receipt and inspection. There is no cancellation fee in this preview. Prepaid refunds are simulated.']
  : section);
-export const posExchangeTerms='Change-of-mind purchases are exchange only within 3 days of purchase. Bring the original receipt and the unused garment with original tags intact. Exchange is subject to inspection and stock of another size or colour of the same product. No change-of-mind refund applies. Statutory consumer rights apply. This policy takes precedence over any conflicting receipt notes.';
-export const policySections=policySectionsV5.flatMap(section=>{
+const exchangeReplacementTerms='Choose an available size or colour of the original product first. If a replacement of that product is unavailable, you can choose another product and apply the original item’s net purchase value as credit. Pay any difference when the replacement costs more. If it costs less, add another item so the total covers the credit. Unused exchange credit is not paid out.';
+export const posExchangeTerms='Change-of-mind purchases are exchange only within 3 days of purchase. Bring the original receipt and the unused garment with original tags intact. Exchange is subject to inspection and stock. '+exchangeReplacementTerms+' Statutory consumer rights apply. This policy takes precedence over any conflicting receipt notes.';
+const policySectionsV6=policySectionsV5.flatMap(section=>{
  switch(section[0]){
   case 'Change-of-mind returns within 3 days':
    return [['Change-of-mind exchanges within 3 days',
@@ -97,8 +98,11 @@ export const policySections=policySectionsV5.flatMap(section=>{
   default:return [section];
  }
 });
+export const policySections=policySectionsV6.map(section=>section[0]==='Change-of-mind exchanges within 3 days'
+ ? [section[0],section[1],exchangeReplacementTerms,'Exchanges depend on inspection and stock at completion. For website test orders, any difference is due at simulated delivery.']
+ : section);
 export function policyDocument(policy){
- const sections=policy.sections??(policy.rulesVersion===policyRulesVersion?policySections:policy.rulesVersion===5?policySectionsV5:policy.rulesVersion===4?policySectionsV4:policy.rulesVersion===3?policySectionsV3:policy.rulesVersion===2?policySectionsV2:[]);
+ const sections=policy.sections??(policy.rulesVersion===policyRulesVersion?policySections:policy.rulesVersion===6?policySectionsV6:policy.rulesVersion===5?policySectionsV5:policy.rulesVersion===4?policySectionsV4:policy.rulesVersion===3?policySectionsV3:policy.rulesVersion===2?policySectionsV2:[]);
  return structuredClone({...policy,sections});
 }
 export function orderEligibility(order,now=Date.now()){

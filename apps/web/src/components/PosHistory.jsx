@@ -29,33 +29,52 @@ function BillItems({items}) {
 }
 
 function ReturnEntries({sale}) {
- return sale.returns?.length>0&&<ul>{sale.returns.map(entry=><li key={entry.id}>{saleDate(entry.at)} · {entry.sku} × {entry.qty} · {entry.reason} · {entry.replacement?<>Exchange → {entry.replacement.color} / {entry.replacement.size} · {entry.replacement.sku}</>:<>Historical refund · {cash(entry.refund)}</>} · Received at {entry.locationId}</li>)}</ul>;
+ return sale.returns?.length>0&&<ul>{sale.returns.map(entry=><li key={entry.id}>{saleDate(entry.at)} · {entry.sku} × {entry.qty} · {entry.reason} · {entry.replacement?<>Exchange → {entry.replacement.color} / {entry.replacement.size} · {entry.replacement.sku}</>:<>Historical refund · {cash(entry.refund)}</>}{entry.exchange?.lines[1]&&` + ${entry.exchange.lines[1].name} (${entry.exchange.lines[1].sku})`}{entry.payment&&` · Difference ${cash(entry.payment.amount)} (${entry.payment.method}, simulated)`} · Received at {entry.locationId}</li>)}</ul>;
 }
 
 function PosExchange({sale,token,onReturned}) {
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
+ const [choices,setChoices]=useState(null),[quote,setQuote]=useState(null);
  const attempt=useRef(null);
  async function submit(event) {
   event.preventDefault();
   const form=event.currentTarget,fields=new FormData(form);
-  const body=JSON.stringify({barcode:fields.get('barcode'),replacementBarcode:fields.get('replacementBarcode'),qty:Number(fields.get('qty')),reason:fields.get('reason'),sellable:fields.get('sellable')==='on'});
+  const action=event.nativeEvent.submitter?.value||'options';
+  const body=JSON.stringify({
+   action,barcode:fields.get('barcode'),qty:Number(fields.get('qty')),replacementBarcode:fields.get('replacementBarcode'),
+   addOnBarcode:fields.get('addOnBarcode'),reason:fields.get('reason'),sellable:fields.get('sellable')==='on',
+   ...(action==='complete'?{expectedDifference:quote?.difference,paymentMethod:fields.get('paymentMethod')}:{}),
+  });
   if(attempt.current?.body!==body)attempt.current={body,key:uniqueKey()};
   setBusy(true);setError('');setNotice('');
   try {
    const result=await api(`/api/pos/sales/${sale.id}/returns`,{token,method:'POST',body,headers:{'x-idempotency-key':attempt.current.key}});
-   onReturned(result.sale);form.reset();attempt.current=null;
-   setNotice(`Exchanged ${result.return.qty} piece(s) for ${result.return.replacement.color} / ${result.return.replacement.size}.`);
+   if(action==='options'){setChoices(result);setQuote(null);return;}
+   if(action==='quote'){setQuote(result);return;}
+   onReturned(result.sale);form.reset();attempt.current=null;setChoices(null);setQuote(null);
+   setNotice(`Exchange saved. ${result.return.payment?`${cash(result.return.payment.amount)} recorded as simulated payment.`:'No price difference.'}`);
   } catch(error) {setError(error.message);}
   finally {setBusy(false);}
  }
+ function resetOptions(){setChoices(null);setQuote(null);}
  return <form onSubmit={submit} className="m02-grid">
-  <label>Scan returned garment<input name="barcode" required autoComplete="off" placeholder="e.g. 0012345678905" onKeyDown={event=>{if(event.key==='Enter'){event.preventDefault();event.currentTarget.form.elements.replacementBarcode.focus();}}}/></label>
-  <label>Replacement garment barcode<input name="replacementBarcode" required autoComplete="off"/></label>
-  <label>Quantity<input name="qty" type="number" min="1" max="25" required defaultValue="1"/></label>
+  <label>Scan original garment<input name="barcode" required autoComplete="off" onChange={resetOptions}/></label>
+  <label>Quantity<input name="qty" type="number" min="1" max="25" required defaultValue="1" onChange={resetOptions}/></label>
+  <button value="options" formNoValidate disabled={busy}>Check available replacements</button>
+  {choices&&<><p>{choices.sameProduct?'Choose another size or colour of the original product.':
+   `The original product has no available replacement for this quantity. Exchange credit ${cash(choices.credit)}.`}</p>
+  {choices.options.length>0?<><label>Replacement barcode<input name="replacementBarcode" list={`exchange-${sale.id}`} autoComplete="off" required onChange={()=>setQuote(null)}/></label>
+  <datalist id={`exchange-${sale.id}`}>{choices.options.map(option=><option value={option.barcode} key={option.sku}>{option.name} · {option.color} / {option.size} · {cash(option.unitPrice)}</option>)}</datalist>
+  {!choices.sameProduct&&<label>Additional item barcode<input name="addOnBarcode" list={`add-on-${sale.id}`} autoComplete="off" onChange={()=>setQuote(null)}/></label>}
+  {!choices.sameProduct&&<datalist id={`add-on-${sale.id}`}>{choices.addOns.map(option=><option value={option.barcode} key={option.sku}>{option.name} · {option.color} / {option.size} · {cash(option.unitPrice)}</option>)}</datalist>}
+  <button value="quote" formNoValidate disabled={busy}>Check price difference</button>
+  {quote&&<p role="status">{quote.shortfall?`Add another product to cover the remaining ${cash(quote.shortfall)} credit.`:`Difference due: ${cash(quote.difference)}.`}</p>}
+  {quote&&!quote.shortfall&&<>
+  {quote.difference>0&&<label>Simulated payment method<select name="paymentMethod" required defaultValue=""><option value="">Choose a method</option><option>Cash</option><option>UPI</option><option>Card</option></select></label>}
   <label>Exchange reason<input name="reason" required maxLength={240} placeholder="e.g. Wrong size"/></label>
   <label><input name="sellable" type="checkbox" required/> Tags and condition checked. Item is sellable and ready for warehouse restock.</label>
-  <button disabled={busy}>{busy?"Saving exchange…":"Complete exchange"}</button>
-  <ActionFeedback error={error} success={notice} pending={busy?'Saving exchange…':''}/>
+  <button value="complete" disabled={busy}>{busy?"Saving exchange…":"Complete exchange"}</button></>}</>:<p>No replacement is currently available.</p>}</>}
+  <ActionFeedback error={error} success={notice} pending={busy?'Checking exchange…':''}/>
  </form>;
 }
 

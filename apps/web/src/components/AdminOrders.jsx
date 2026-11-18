@@ -76,7 +76,7 @@ export default function AdminOrders({token,filter,onFilter,onReviewed,canReview=
     {orderCases(detail).map(({kind,key,request})=><article className="admin-order-case" key={key}>
      <strong>{kind==='return'?'Exchange request':'Delivery issue'} · {request.sku}</strong>
      <p>{returnReasons[request.reason]||request.reason} · {orderRequestStatus(request)}</p>
-     {request.replacement&&<p>Replacement · {request.replacement.color} / {request.replacement.size} · {request.replacement.sku}</p>}
+     {request.replacement&&<p>Replacement · {(request.exchange?.lines??[request.replacement]).map(line=>[line.name,line.color+' / '+line.size,line.sku].filter(Boolean).join(' · ')).join(' + ')}{request.exchange?.difference>0&&` · ${cash(request.exchange.difference)} due at mock delivery`}</p>}
      <ReturnOutcome inspection={request.inspection} staff/>
      {request.note&&<p>{request.note}</p>}
      {request.review&&<p><strong>Decision:</strong> {request.review.note} <small>({date(request.review.decidedAt)})</small></p>}

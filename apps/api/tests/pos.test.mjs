@@ -138,3 +138,31 @@ test('admin purchase extract filters all customers by channel and inclusive Indi
  assert.throws(()=>app.purchaseExtract({role:'pos'},{...dates,channel:'sales'}),{status:403});
  assert.throws(()=>app.purchaseExtract(admin,{...dates,to:'2026-11-31',channel:'sales'}),{status:400});
 });
+
+test('POS checks the original product before quoting and recording an alternate exchange',async()=>{
+ const c=new Commerce(),cashier={role:'pos',locationId:'store-hyd-01',userId:'pos'};
+ const [original,expensive,,,,,,cheap]=c.products;
+ const [item]=original.variants,[upgrade]=expensive.variants,[lowerPrice,addOn]=cheap.variants;
+ const {sale}=await c.completePosSale(cashier,{
+  items:[{sku:item.sku,qty:1}],customer:{name:'Example Customer',phone:'9876543210'},
+  paymentMethod:'Cash',idempotencyKey:'pos-alternate-original',
+ });
+ const input={barcode:item.barcode,qty:1,sellable:true,reason:'Wrong size',replacementBarcode:upgrade.barcode};
+ const call=(overrides,key)=>c.returnPosItem(cashier,sale.id,{...input,...overrides},key);
+ await assert.rejects(call({action:'quote'}),/original product first/);
+ for(const variant of original.variants)c.stock[variant.sku]['warehouse-hyd']=0;
+ assert.equal((await call({action:'quote'})).difference,300);
+ assert.equal((await call({action:'quote',replacementBarcode:lowerPrice.barcode})).shortfall,700);
+ const basket={replacementBarcode:lowerPrice.barcode,addOnBarcode:addOn.barcode};
+ assert.equal((await call({...basket,action:'quote'})).difference,99);
+ await assert.rejects(call({...basket,expectedDifference:0},'pos-alternate-stale'),/updated exchange price/);
+ assert.equal(c.available(item.sku),0);
+ const paid={...basket,expectedDifference:99,paymentMethod:'Cash'};
+ const completed=await call(paid,'pos-alternate-paid');
+ assert.deepEqual(completed.return.payment,{method:'Cash',status:'simulated',amount:99});
+ assert.deepEqual(await call(paid,'pos-alternate-paid'),completed);
+ assert.equal(c.available(item.sku),1);
+ assert.equal(c.available(lowerPrice.sku),5);
+ assert.equal(c.available(addOn.sku),5);
+ assert.equal(c.posDashboard(cashier,'today').net,1598);
+});

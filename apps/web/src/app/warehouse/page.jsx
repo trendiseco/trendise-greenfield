@@ -142,7 +142,7 @@ function Warehouse(){
      <p>{kind==='return'?'Customer exchange':'Delivery issue'} · {request.sku} · {returnReasons[request.reason]} · {orderRequestStatus(request)}</p>
      {request.note&&<p>{request.note}</p>}
      {request.receivedAt&&<p>Received {formatTime(request.receivedAt)}{!request.inspection&&' · Awaiting inspection'}</p>}
-     {request.replacement&&<p>Replacement · {request.replacement.color} / {request.replacement.size} · {request.replacement.sku}</p>}
+     {request.replacement&&<p>Replacement · {(request.exchange?.lines??[request.replacement]).map(line=>[line.name,line.color+' / '+line.size,line.sku].filter(Boolean).join(' · ')).join(' + ')}{request.exchange?.difference>0&&` · ${cash(request.exchange.difference)} due at mock delivery`}</p>}
      <ReturnOutcome inspection={request.inspection} staff/>
      {can('warehouse.inspect')&&request.receivedAt&&!request.inspection&&<form className="stack" onSubmit={e=>{
       e.preventDefault();

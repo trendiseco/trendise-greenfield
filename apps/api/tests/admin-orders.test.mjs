@@ -105,3 +105,42 @@ test('exchange inspection creates one replacement and isolates failed stock',asy
  assert.deepEqual(c.ordersFor(customer)[0].returnRequests,c.adminOrderDetail(admin,orderId).returnRequests);
  assert.deepEqual(adminDashboard(c).inspections,{passed:1,failed:1,quarantinedUnits:2,refunds:0});
 });
+
+test('website offers other products only when the original has no available replacement',async()=>{
+ const c=new Commerce(),customer={role:'customer',phone:'9876543210'},warehouse={role:'warehouse'},admin={role:'admin'};
+ const [original,expensive,,,,,,cheap]=c.products;
+ const [item]=original.variants,[upgrade]=expensive.variants,[lowerPrice,addOn]=cheap.variants;
+ const {orderId}=await c.placeOrder(customer,{
+  items:[{sku:item.sku,qty:1}],paymentMethod:'cod',acceptedPolicyVersion:c.version,
+  address:{name:'Test Shopper',phone:customer.phone,line1:'Demo road',city:'Hyderabad',state:'Telangana',pincode:'500001'},
+ },'alternate-exchange-test');
+ const pickCode=`LINE-${orderId}-1`;
+ await c.warehouseVerify(warehouse,orderId,pickCode,pickCode);
+ await c.dispatch(warehouse,orderId);
+ await c.markDelivered(warehouse,orderId);
+ const input={sku:item.sku,reason:'fit',conditionConfirmed:true,replacementSku:upgrade.sku,expectedDifference:300};
+ await assert.rejects(c.requestOrderReturn(customer,orderId,input),/original product first/);
+ for(const variant of original.variants)c.stock[variant.sku]['warehouse-hyd']=0;
+ const choices=c.ordersFor(customer)[0].items[0].exchange;
+ assert.equal(choices.sameProduct,false);
+ assert.equal(choices.credit,1499);
+ await assert.rejects(c.requestOrderReturn(customer,orderId,{...input,replacementSku:lowerPrice.sku}),/Add another product/);
+ await assert.rejects(c.requestOrderReturn(customer,orderId,{...input,expectedDifference:0}),/price changed/);
+ const accepted=await c.requestOrderReturn(customer,orderId,{...input,replacementSku:lowerPrice.sku,addOnSku:addOn.sku,expectedDifference:99});
+ assert.equal(accepted.returnRequests[0].exchange.difference,99);
+ await c.reviewOrderCase(admin,orderId,{caseKey:'return:'+item.sku,decision:'approved',note:'Approved for inspection.'});
+ await c.receiveOrderReturn(warehouse,orderId,{sku:item.sku,barcode:item.barcode,quantity:1});
+ const inspected=await c.inspectOrderReturn(warehouse,orderId,{sku:item.sku,decision:'pass',reason:'Tags intact and garment unused.'});
+ const replacement=c.orders.get(inspected.returnRequests[0].inspection.replacementOrderId);
+ assert.deepEqual(replacement.items.map(line=>line.sku),[lowerPrice.sku,addOn.sku]);
+ assert.equal(replacement.quote.total,99);
+ assert.equal(replacement.payment.status,'due_on_delivery');
+ assert.equal(c.available(item.sku),1);
+ for(const [index] of replacement.items.entries()){
+  const code=`LINE-${replacement.id}-${index+1}`;
+  await c.warehouseVerify(warehouse,replacement.id,code,code);
+ }
+ await c.dispatch(warehouse,replacement.id);
+ const delivered=await c.markDelivered(warehouse,replacement.id);
+ assert.equal(delivered.payment.status,'mock_collected');
+});

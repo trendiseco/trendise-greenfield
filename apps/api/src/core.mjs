@@ -194,22 +194,43 @@ export class Commerce {
   ordersFor(session) {
     if(session.role==='customer')return [...this.orders.values()].filter(order=>order.phone===session.phone).map(order=>{
       const eligibility=orderEligibility(order,this.orderNow());
-      const items=order.items.map(item=>({...clone(item),...(eligibility.canReturn?{exchangeOptions:this.exchangeOptions(item)}:{})}));
+      const items=order.items.map(item=>({...clone(item),...(eligibility.canReturn?{exchange:this.exchangeChoices(item,order.quote)}:{})}));
       return {...clone(order),...eligibility,items};
     });
     this.permit(session,'orders.read');
     return [...this.orders.values()].map(clone);
   }
-  exchangeOptions(item) {
-    const {product}=this.product(item.sku);
-    if(this.hiddenCategories.includes(product.category))return [];
-    return product.variants.filter(variant=>variant.sku!==item.sku&&this.available(variant.sku)>=item.qty)
-      .map(({sku,size,color})=>({sku,size,color}));
+  exchangeChoices(item, quote, online=true) {
+    const {product:original}=this.product(item.sku);
+    const eligible=product=>!this.hiddenCategories.includes(product.category)&&(!online||product.websiteVisible!==false);
+    const options=(product,qty)=>eligible(product)?product.variants
+      .filter(variant=>variant.sku!==item.sku&&this.available(variant.sku)>=qty)
+      .map(variant=>({
+        sku:variant.sku,name:product.name,size:variant.size,color:variant.color,qty,
+        unitPrice:this.posPricing(variant,online).salePrice,...(!online?{barcode:variant.barcode}:{}),
+      })):[];
+    const sameProduct=options(original,item.qty);
+    const credit=money((item.lineTotal??item.unitPrice*item.qty)*
+      (online&&quote.subtotal>0?1-(quote.discount||0)/quote.subtotal:1));
+    return {
+      sameProduct:sameProduct.length>0,credit,
+      options:sameProduct.length?sameProduct:this.products.filter(product=>product!==original).flatMap(product=>options(product,item.qty)),
+      addOns:sameProduct.length?[]:this.products.flatMap(product=>options(product,1)),
+    };
   }
-  exchangeReplacement(item,sku) {
-    const replacement=this.exchangeOptions(item).find(variant=>variant.sku===sku);
-    if(!replacement)throw new DomainError(409,'Select an available size or colour of the same product for the requested quantity.');
-    return replacement;
+
+  exchangeQuote(choices, replacementSku, addOnSku) {
+    const replacement=choices.options.find(option=>option.sku===replacementSku);
+    if(!replacement)throw new DomainError(409,choices.sameProduct
+      ?'Choose an available size or colour of the original product first.'
+      :'Choose an available replacement from the catalogue.');
+    const addOn=choices.addOns.find(option=>option.sku===addOnSku);
+    if(addOnSku&&(!addOn||addOn.sku===replacement.sku))throw new DomainError(409,'Choose a different, available additional item.');
+    const lines=addOn?[replacement,addOn]:[replacement];
+    const subtotal=money(lines.reduce((sum,line)=>sum+line.unitPrice*line.qty,0));
+    const credit=choices.sameProduct?subtotal:choices.credit;
+    const balance=money(subtotal-credit);
+    return {lines,subtotal,credit,difference:Math.max(0,balance),shortfall:Math.max(0,-balance)};
   }
 
   warehouseQueue(session){
@@ -323,6 +344,7 @@ export class Commerce {
     if(order.status!=='shipped')throw new DomainError(409,'Only dispatched orders can be marked delivered');
     order.status='delivered';order.deliveredAt=new Date(this.orderNow()).toISOString();
     if(['cod','split'].includes(order.payment.method)){order.payment.status='mock_collected';this.earnOrderPoints({role:'customer',phone:order.phone},order);}
+    if(order.payment.method==='exchange'&&order.payment.status==='due_on_delivery')order.payment.status='mock_collected';
     this.event(session,'MOCK_DELIVERED',id);return clone(order);
   });}
   async receiveOrderReturn(session,id,body){return this.serialized(()=>{
@@ -352,7 +374,14 @@ export class Commerce {
     if(routine&&body.conditionConfirmed!==true)throw new DomainError(400,'Confirm the exchange condition checklist');
     const request={sku:body.sku,reason,note,status:'requested',requestedAt:new Date(this.orderNow()).toISOString()};
     if(routine){
-      request.replacement=this.exchangeReplacement(order.items.find(item=>item.sku===body.sku),body.replacementSku);
+      const choices=this.exchangeChoices(order.items.find(item=>item.sku===body.sku),order.quote);
+      const exchange=this.exchangeQuote(choices,body.replacementSku,body.addOnSku);
+      if(exchange.shortfall)throw new DomainError(409,'Add another product to cover the remaining exchange credit.');
+      if((exchange.difference>0||body.expectedDifference!==undefined)&&body.expectedDifference!==exchange.difference){
+        throw new DomainError(409,'The exchange price changed. Refresh My Orders and confirm the new amount.');
+      }
+      request.replacement=exchange.lines[0];
+      request.exchange=exchange;
       const requests=order.returnRequests||[order.returnRequest].filter(Boolean);if(requests.some(r=>r.sku===body.sku))throw new DomainError(409,'An exchange was already requested for this item');order.returnRequests=[...requests,request];}
     else order.issueReport=request;
     this.event(session,routine?'EXCHANGE_REQUESTED':'DELIVERY_ISSUE_REPORTED',id);return clone(order);
