@@ -139,6 +139,8 @@ const handle=async (req,res)=>{
     }
     if(path.startsWith('/api/admin/')){
       const staff=core.session(tokenFrom(req));
+      if(is('GET','/api/admin/customer-contact'))return respond(res,200,core.customerContact(staff));
+      if(is('POST','/api/admin/customer-contact'))return respond(res,200,await core.saveCustomerContact(staff,await bodyOf(req)));
       if(is('GET','/api/admin/pos-terms'))return respond(res,200,core.posTermsSettings(staff));
       if(is('POST','/api/admin/pos-terms'))return respond(res,200,core.savePosTerms(staff,(await bodyOf(req))?.text));
       if(is('GET','/api/admin/website-promotions'))return respond(res,200,core.posPromotionList(staff,true));

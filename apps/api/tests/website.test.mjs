@@ -40,3 +40,15 @@ test('scoped website offers persist and price checkout independently of POS',asy
  assert.equal(restarted.onlineQuote(customer,body).total,1499);
  assert.equal(order.order.quote.total,990);
 });
+
+test('public customer contact is editable by Super Admin and persists across reloads',async()=>{
+ const c=new Commerce(),superadmin={role:'superadmin'};
+ const current=c.customerContact(superadmin);
+ assert.equal(c.websitePublic().site.contact.phone,'8712435445');
+ await assert.rejects(c.saveCustomerContact(admin,{...current,phone:'9876543210'}),{status:403});
+ await assert.rejects(c.saveCustomerContact(superadmin,{...current,email:'invalid'}),{status:400});
+ const saved=await c.saveCustomerContact(superadmin,{...current,phone:'9876543210',email:'care@example.com'});
+ await assert.rejects(c.saveCustomerContact(superadmin,current),{status:409});
+ const restarted=new Commerce();restore(restarted,structuredClone(snapshot(c)));
+ assert.deepEqual(restarted.websitePublic().site.contact,saved);
+});

@@ -1,3 +1,4 @@
+import {customerContactDefaults} from '../../../shared/customer-contact.mjs';
 import {websiteCharges} from '../../../shared/website-charges.mjs';
 import {orderEligibility,policyDocument,policyRulesVersion} from '../../../shared/order-policy.mjs';
 import {readFileSync} from 'node:fs';
@@ -25,8 +26,23 @@ export function validateSite(value,template=siteDefaults,key='website'){
  return value;
 }
 export const websiteMethods={
+ customerContact(session){
+  this.permit(session,'users.manage');
+  return clone(this.website.contact??customerContactDefaults);
+ },
+ async saveCustomerContact(session,body){return this.serialized(()=>{
+  this.permit(session,'users.manage');
+  const current=this.customerContact(session);
+  if(body.revision!==current.revision)bad('Contact details changed. Reload before saving.',409);
+  if(typeof body.phone!=='string'||!(/^[6-9][0-9]{9}$/).test(body.phone))bad('Enter a valid 10-digit Indian support mobile number.');
+  if(typeof body.email!=='string'||body.email.length>254||!(/^[^\s@]+@[^\s@]+\.[^\s@]+$/).test(body.email))bad('Enter a valid customer support email.');
+  this.website.contact={phone:body.phone,email:body.email.trim(),revision:current.revision+1};
+  this.event(session,'CUSTOMER_CONTACT_UPDATED',String(this.website.contact.revision));
+  return clone(this.website.contact);
+ });},
+
  ensureWebsite(){if(!this.website)this.website=websiteState();},
- websitePublic(){this.ensureWebsite();this.expireReservations();return {site:clone(this.website.site),hiddenCategories:[...this.hiddenCategories],variantPrices:Object.fromEntries(this.products.flatMap(product=>product.variants.map(variant=>[variant.sku,this.websitePriceFields(variant)]))),rules:clone(this.website.rules),coupons:this.website.coupons.filter(c=>c.active&&c.public&&this.website.couponUses.filter(u=>u.code===c.code).length+[...this.reservations.values()].filter(r=>r.status==='active'&&r.quote.coupon===c.code).length<c.maxUses&&(!c.start||c.start<=indiaDate(this.clock?.()))&&(!c.end||c.end>=indiaDate(this.clock?.()))).map(c=>({code:c.code,name:c.name,type:c.type,value:c.value,minOrder:c.minOrder,maxDiscount:c.maxDiscount,start:c.start,end:c.end})),mode:'MOCK_ONLY'};},
+ websitePublic(){this.ensureWebsite();this.expireReservations();return {site:{...clone(this.website.site),contact:clone(this.website.contact??customerContactDefaults)},hiddenCategories:[...this.hiddenCategories],variantPrices:Object.fromEntries(this.products.flatMap(product=>product.variants.map(variant=>[variant.sku,this.websitePriceFields(variant)]))),rules:clone(this.website.rules),coupons:this.website.coupons.filter(c=>c.active&&c.public&&this.website.couponUses.filter(u=>u.code===c.code).length+[...this.reservations.values()].filter(r=>r.status==='active'&&r.quote.coupon===c.code).length<c.maxUses&&(!c.start||c.start<=indiaDate(this.clock?.()))&&(!c.end||c.end>=indiaDate(this.clock?.()))).map(c=>({code:c.code,name:c.name,type:c.type,value:c.value,minOrder:c.minOrder,maxDiscount:c.maxDiscount,start:c.start,end:c.end})),mode:'MOCK_ONLY'};},
  async saveWebsite(s,body){return this.serialized(()=>{this.permit(s,'website.edit');this.ensureWebsite();if(body.revision!==this.website.siteDraft.revision)bad('Website draft changed; reload before saving',409);const data=validateSite(body);data.revision=body.revision+1;this.website.siteDraft=data;this.event(s,'WEBSITE_DRAFT_SAVED',String(data.revision));return clone(data);});},
  async publishWebsite(s,body){return this.serialized(()=>{this.permit(s,'website.publish');this.ensureWebsite();if(body.revision!==this.website.siteDraft.revision)bad('Preview the current saved draft before publishing',409);const data=validateSite(this.website.siteDraft);this.website.site=clone(data);this.policyHistory[this.version]??=policyDocument(this.policy);this.policy={...clone(data.policy),version:'TC-WEB-'+data.revision+'-R'+policyRulesVersion,rulesVersion:policyRulesVersion,effectiveDate:this.policyHistory['TC-WEB-'+data.revision+'-R'+policyRulesVersion]?.effectiveDate??indiaDate(this.clock?.())};this.version=this.policy.version;this.policyHistory[this.version]??=policyDocument(this.policy);this.event(s,'WEBSITE_PUBLISHED',String(data.revision));return clone(data);});},
  async saveCoupon(s,b){return this.serialized(()=>{this.permit(s,'offers.coupons');this.ensureWebsite();const code=String(b.code||'').trim().toUpperCase();if(!/^[A-Z0-9-]{3,30}$/.test(code)||code==='BIRTHDAY')bad('Coupon code: 3–30 letters, digits or hyphens; BIRTHDAY is reserved');if(!b.name?.trim()||b.name.length>120||!['percent','fixed'].includes(b.type)||typeof b.active!=='boolean'||typeof b.public!=='boolean')bad('Enter coupon name, type and status');
