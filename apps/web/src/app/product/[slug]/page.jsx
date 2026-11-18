@@ -4,7 +4,6 @@ import {useParams,useSearchParams} from 'next/navigation';
 import {useCallback,useEffect,useState} from 'react';
 import {useCatalogAvailability,withCatalogAvailability} from '../../../lib/useCatalogAvailability';
 import {api,cash} from '../../../lib/api';
-import LocalStylePreview from '../../../components/LocalStylePreview';
 import SizeChart from '../../../components/SizeChart';
 import ProductPrice from '../../../components/ProductPrice';
 import StoreDialog from '../../../components/StoreDialog';
@@ -28,6 +27,5 @@ export default function ProductPage(){
  <div className="mobile-purchase"><span><ProductPrice sku={variant.sku} price={variant.price} regularPrice={variant.regularPrice}/><small>{variant.color} / {variant.size}</small></span><button disabled={!variant.available} onClick={add}>{added?'Added ✓':variant.available?'Add to bag ↗':'Sold out'}</button></div>
  {dialog==='zoom'&&image&&<StoreDialog title={`${product.name} — ${image.label}`} onClose={close} className="zoom-dialog"><img className="zoom-image" src={image.src} alt={image.alt}/><div className="zoom-controls"><button onClick={()=>A((active+gallery.length-1)%gallery.length)} aria-label="Previous photograph">←</button><span>{active+1} / {gallery.length} · {variant.color}</span><button onClick={()=>A((active+1)%gallery.length)} aria-label="Next photograph">→</button></div></StoreDialog>}
  {dialog==='size'&&<StoreDialog title="Fit & size measurements" onClose={close} className="size-chart-dialog"><SizeChart product={product} selectedSize={variant.size}/><button className="button button-dark full" onClick={close}>Return to size selection</button></StoreDialog>}
- {dialog==='tryon'&&<StoreDialog title="Virtual try-on — garment overlay" onClose={close} className="size-chart-dialog"><LocalStylePreview product={product} variant={variant} image={gallery[0]}/><button className="button button-dark full" onClick={close}>Return to product</button></StoreDialog>}
  </main>;
 }

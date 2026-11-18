@@ -6,7 +6,6 @@ import {useCatalogAvailability,withCatalogAvailability} from '../../lib/useCatal
 import {api} from '../../lib/api';
 import {useSite} from '../../components/SiteProvider';
 import ProductCard from '../../components/ProductCard';
-const editCategories={Work:['Shirts','Formal Pants'],Weekend:['Cotton Pants','Polo T-Shirts','Cotton Cargo'],'After Hours':['Denim Pants','Round-Neck T-Shirts']};
 function ShopInner(){
  const {site}=useSite(),params=useSearchParams(),[catalog,P]=useState([]),[category,C]=useState(params.get('category')||'All'),[search,Q]=useState(params.get('search')||''),[size,Z]=useState('All'),[color,V]=useState('All'),[fit,F]=useState('All'),[maxPrice,B]=useState(''),[inStock,I]=useState(false),[sort,S]=useState('featured'),[error,E]=useState('');
  const edit=params.get('edit')||'';const editMap=Object.fromEntries(site.edits.items.map(e=>[e.name,e.categories]));
