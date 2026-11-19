@@ -2,13 +2,14 @@
 import {useEffect,useRef,useState} from 'react';
 import {api} from '../lib/api';
 import {customerAuthClient} from '../lib/customer-auth';
+import {birthdayToday,validBirthday} from '../../../../shared/customer-birthday.mjs';
 import {openMsg91Widget} from '../lib/msg91-widget';
 import ActionFeedback from './ActionFeedback';
 import './customer-auth.css';
 
 export default function CustomerAuth({onSignedIn,next='/account'}){
  const [mode,setMode]=useState('signin'),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
- const [form,setForm]=useState({firstName:'',lastName:'',email:'',phone:'',password:''});
+ const [form,setForm]=useState({firstName:'',lastName:'',email:'',phone:'',password:'',birthday:''});
  const [providerSession,setProviderSession]=useState(null),[linkRequired,setLinkRequired]=useState(false);
  const [legacyOtp,setLegacyOtp]=useState(''),[legacyRequested,setLegacyRequested]=useState(false);
  const inFlight=useRef(false),callbackStarted=useRef(false);
@@ -27,7 +28,7 @@ export default function CustomerAuth({onSignedIn,next='/account'}){
   try{
    const result=await api('/api/auth/customer/session',{method:'POST',body:JSON.stringify({
     accessToken:session.access_token,firstName:details.firstName||undefined,lastName:details.lastName||undefined,
-    phone:details.phone||undefined,legacyToken,
+    phone:details.phone||undefined,birthday:details.birthday||undefined,legacyToken,
    })});
    sessionStorage.setItem('trd_customer_token',result.token);
    setProviderSession(null);setLinkRequired(false);
@@ -36,12 +37,12 @@ export default function CustomerAuth({onSignedIn,next='/account'}){
    if(error.code==='PROFILE_REQUIRED'){
     setMode('profile');setNotice('Finish your profile to continue.');
     const metadata=session.user?.user_metadata||{};
-    setForm(previous=>({...previous,email:session.user?.email||previous.email,firstName:metadata.first_name||previous.firstName,lastName:metadata.last_name||previous.lastName,phone:metadata.contact_phone||previous.phone}));
+    setForm(previous=>({...previous,email:session.user?.email||previous.email,firstName:metadata.first_name||previous.firstName,lastName:metadata.last_name||previous.lastName,phone:metadata.contact_phone||previous.phone,birthday:metadata.date_of_birth||previous.birthday}));
     return;
    }
    if(error.code==='PHONE_LINK_REQUIRED'){
     const metadata=session.user?.user_metadata||{};
-    setForm(previous=>({...previous,email:session.user?.email||previous.email,firstName:details.firstName||metadata.first_name||previous.firstName,lastName:details.lastName||metadata.last_name||previous.lastName,phone:details.phone||metadata.contact_phone||previous.phone}));
+    setForm(previous=>({...previous,email:session.user?.email||previous.email,firstName:details.firstName||metadata.first_name||previous.firstName,lastName:details.lastName||metadata.last_name||previous.lastName,phone:details.phone||metadata.contact_phone||previous.phone,birthday:details.birthday||metadata.date_of_birth||previous.birthday}));
     setLinkRequired(true);setNotice(error.message);return;
    }
    throw error;
@@ -68,6 +69,7 @@ export default function CustomerAuth({onSignedIn,next='/account'}){
  async function submit(event){
   event.preventDefault();
   await run(async()=>{
+   if((mode==='signup'||mode==='profile')&&!validBirthday(form.birthday))throw new Error('Enter a valid date of birth, no earlier than 1900 and not in the future.');
    if(mode==='profile'){await finish(providerSession);return;}
    const {client}=await customerAuthClient();
    if(mode==='signup'){
@@ -75,7 +77,7 @@ export default function CustomerAuth({onSignedIn,next='/account'}){
     const {data,error}=await client.auth.signUp({
      email:form.email.trim(),password:form.password,
      options:{emailRedirectTo:window.location.origin+'/account',data:{
-      first_name:form.firstName.trim(),last_name:form.lastName.trim(),contact_phone:form.phone.trim(),
+      first_name:form.firstName.trim(),last_name:form.lastName.trim(),contact_phone:form.phone.trim(),date_of_birth:form.birthday,
      }},
     });
     if(error)throw error;
@@ -125,6 +127,7 @@ export default function CustomerAuth({onSignedIn,next='/account'}){
     </div>}
     <label>Email<input required type="email" name="email" autoComplete="email" maxLength={254} value={form.email} readOnly={mode==='profile'} onChange={change} placeholder="you@example.com"/></label>
     {fields&&<label>Phone number<input required type="tel" name="phone" autoComplete="tel-national" pattern="[6-9][0-9]{9}" maxLength={10} value={form.phone} onChange={change} placeholder="10-digit Indian mobile number"/></label>}
+    {fields&&<label>Date of birth (optional)<input type="date" name="birthday" autoComplete="bday" min="1900-01-01" max={birthdayToday()} value={form.birthday} onChange={change}/><small>Add your birthday to receive birthday offers. Once saved, you cannot change or remove it.</small></label>}
     {mode!=='profile'&&<label>Password<input required type="password" name="password" autoComplete={mode==='signup'?'new-password':'current-password'} minLength={mode==='signup'?8:undefined} maxLength={128} value={form.password} onChange={change}/>{mode==='signup'&&<small>Use at least 8 characters.</small>}</label>}
     <button className="button button-dark full" disabled={busy}>{busy?'Please wait…':mode==='signup'?'Create account':mode==='profile'?'Save and continue':'Sign in'}</button>
    </fieldset>

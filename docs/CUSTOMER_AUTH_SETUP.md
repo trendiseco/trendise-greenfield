@@ -55,3 +55,10 @@ Automated coverage includes verified identity ownership, old-history linking, re
 Real email delivery and Google consent require owner/provider setup and a live end-to-end test. A successful build or mocked provider test does not establish those external flows work. This change is not a declaration that the wider development application is production-ready.
 
 For deployment replace localhost origins/redirects with the exact HTTPS website domain in Supabase and Google, configure the API's allowed website origin, and supply the corresponding environment values privately. Keep secrets out of GitHub.
+
+
+## Date of birth collection
+
+Create account and first-time Google profile completion now include an optional Date of birth field below phone. Registration carries the date through email confirmation into the commerce profile on the first verified sign-in. Customers who skip it can save it later in My Account → Profile. Once the commerce profile has a date, the account input is disabled and customer API requests cannot change or remove it; subsequent sign-ins and changes to Supabase user metadata cannot overwrite it. An existing saved birthday is preserved when verified legacy history is linked. The existing permission-controlled, audited Admin correction remains available through support.
+
+Calendar dates must be valid, no earlier than 1900-01-01, and not in the future in India time. Birthday rewards use this same persisted birthday field. No database migration is required. Verified with the production build and 88 regression tests, including optional signup, one-time profile save, edit/removal rejection, repeated login protection and persistence restoration. Live signup/email confirmation still requires the provider setup described above.

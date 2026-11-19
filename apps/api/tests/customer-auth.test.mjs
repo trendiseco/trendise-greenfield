@@ -128,3 +128,27 @@ test('email HTTP sessions, order ownership and account projection survive Postgr
   try{await cleanup.query(`DROP SCHEMA ${schema} CASCADE`);}finally{await cleanup.end();}
  }
 });
+
+
+test('registration birthday is optional, validated, persists and cannot be changed through profile or repeat login',async()=>{
+ const core=new Commerce();core.clock=()=>new Date('2026-11-19T10:00:00Z');
+ const registered=bindCustomerIdentity(core,{...user,user_metadata:{...user.user_metadata,date_of_birth:'1995-11-15'}},{});
+ const session=core.session(registered.token);
+ assert.equal(core.customerView(session).profile.birthday,'1995-11-15');
+ assert.equal(core.customerView(session).birthdayEligible,true);
+ for(const birthday of ['1995-12-15',''])await assert.rejects(core.saveCustomer(session,{name:'Test Shopper',birthday}),{status:409});
+ bindCustomerIdentity(core,{...user,user_metadata:{...user.user_metadata,date_of_birth:'1990-01-01'}},{birthday:'2000-01-01'});
+ assert.equal(core.customerView(session).profile.birthday,'1995-11-15');
+ await core.saveCustomer(session,{name:'Updated name',birthday:'1995-11-15'});
+ const restored=new Commerce();restore(restored,structuredClone(snapshot(core)));
+ assert.equal(restored.customerView(restored.session(registered.token)).profile.birthday,'1995-11-15');
+ for(const birthday of ['2026-02-30','2026-11-20','1899-12-31',123]){
+  const fresh=new Commerce();fresh.clock=core.clock;
+  assert.throws(()=>bindCustomerIdentity(fresh,user,{birthday}),{status:400});
+  assert.equal(Object.keys(fresh.website.customers).length,0);
+ }
+ const fresh=new Commerce(),login=bindCustomerIdentity(fresh,user,{}),late=fresh.session(login.token);
+ assert.equal(fresh.customerView(late).profile.birthday,'');
+ await fresh.saveCustomer(late,{name:'Test Shopper',birthday:'1992-04-20'});
+ await assert.rejects(fresh.saveCustomer(late,{name:'Test Shopper',birthday:''}),{status:409});
+});

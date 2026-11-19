@@ -1,3 +1,4 @@
+import {validBirthday} from '../../../shared/customer-birthday.mjs';
 import {randomUUID} from 'node:crypto';
 import {DomainError} from './errors.mjs';
 
@@ -39,6 +40,8 @@ export function bindCustomerIdentity(core,user,body){
   if(existing?.[1].customerId&&existing[0]!==id){
    throw new DomainError(409,'This phone number is already linked to another customer account.');
   }
+  const birthday=existing?.[1].birthday||(body.birthday??metadata.date_of_birth??'');
+  if(!validBirthday(birthday,core.orderNow()))throw new DomainError(400,'Enter a valid date of birth, no earlier than 1900 and not in the future.');
   const history=[...core.orders.values(),...core.reservations.values()].some(record=>record.phone===phone);
   if(existing||history){
    const legacy=body.legacyToken?core.session(body.legacyToken,['customer']):null;
@@ -52,7 +55,7 @@ export function bindCustomerIdentity(core,user,body){
     if(session.smsVerified)session.customerId=id;else core.sessions.delete(token);
    }
   }
-  profile={...(existing?.[1]??{birthday:'',points:0}),customerId:id,phone,firstName,lastName,name:firstName+' '+lastName,email:user.email};
+  profile={...(existing?.[1]??{birthday:'',points:0}),birthday,customerId:id,phone,firstName,lastName,name:firstName+' '+lastName,email:user.email};
   if(existing)delete core.website.customers[existing[0]];
   core.website.customers[id]=profile;
   core.event({role:'customer'},'CUSTOMER_IDENTITY_LINKED',id);
