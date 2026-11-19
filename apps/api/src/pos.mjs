@@ -1,3 +1,4 @@
+import {promotionSchedule,promotionActive} from '../../../shared/promotion-schedule.mjs';
 import {centralWarehouseId} from './seed.mjs';
 import {posExchangeTerms,returnMs} from '../../../shared/order-policy.mjs';
 import {randomUUID} from 'node:crypto';
@@ -38,7 +39,8 @@ export const posMethods = {
 
   posPricing(variant, online=false) {
     const regular = cents(online?variant.price:variant.posPrice ?? variant.price);
-    const rule = (online?this.website.promotions:this.posPromotions)?.[variant.sku];
+    const saved = (online?this.website.promotions:this.posPromotions)?.[variant.sku];
+    const rule=promotionActive(saved,this.orderNow())?saved:null;
     const sale = rule?.type === 'fixed' ? Math.min(regular, cents(rule.value))
       : rule?.type === 'percent' ? Math.max(1, Math.round(regular * (100 - rule.value) / 100)) : regular;
     return {regularPrice: rupees(regular), salePrice: rupees(sale)};
@@ -78,12 +80,13 @@ export const posMethods = {
     return Object.fromEntries(this.products.flatMap(product => product.variants.map(variant => [
       variant.sku, {productId:product.id, name:product.name, category:product.category, barcode:variant.barcode,
         color:variant.color, size:variant.size, active:variant.active!==false, websitePrice:variant.price, storePrice:variant.posPrice??variant.price,
-        onHand:this.stock[variant.sku]?.[centralWarehouseId]??0, ...this.posPricing(variant), rule:this.posPromotions[variant.sku] ?? null}
+        onHand:this.stock[variant.sku]?.[centralWarehouseId]??0, ...this.posPricing(variant,online), rule:(online?this.website.promotions:this.posPromotions)?.[variant.sku] ?? null}
     ])));
   },
 
-  savePosPromotion(session, {sku, scope='variant', target, type, value}, online=false) {
+  savePosPromotion(session, {sku, scope='variant', target, type, value, start='', end=''}, online=false) {
     this.permit(session,online?'offers.promotions':'pos.promotions');
+    let schedule;try{schedule=promotionSchedule(start,end);}catch(error){throw new DomainError(400,error.message);}
     const catalog = this.posPromotionList(session,online);
     if (!['variant','product','category','all'].includes(scope)) throw new DomainError(400,'Choose a promotion scope');
     const entries = Object.entries(catalog).filter(([key,entry]) =>
@@ -96,7 +99,7 @@ export const posMethods = {
     const promotions=online?(this.website.promotions??=Object.create(null)):this.posPromotions;
     for (const [key] of entries) {
       if (type==='none') delete promotions[key];
-      else promotions[key]={type,value:rupees(cents(value))};
+      else promotions[key]={type,value:rupees(cents(value)),...schedule};
     }
     this.event(session,online?'WEBSITE_PROMOTION_UPDATED':'POS_PROMOTION_UPDATED',target||sku||scope);
     return this.posPromotionList(session,online);
@@ -112,15 +115,19 @@ export const posMethods = {
       if (!Object.hasOwn(catalog,sku)||catalog[sku].barcode!==barcode||seen.has(sku)||typeof price!=='number'||
         !Number.isFinite(price)||price<0.01||price>1000000||(online&&cents(price)>cents(catalog[sku].regularPrice))) throw new DomainError(400,`Excel row ${index+2}: check SKU, barcode, duplicate rows and price`);
       seen.add(sku);
-      return {sku,price:rupees(cents(price))};
+      let schedule;try{schedule=promotionSchedule(row.start??'',row.end??'');}catch(error){throw new DomainError(400,`Excel row ${index+2}: ${error.message}`);}
+      return {sku,price:rupees(cents(price)),...schedule};
     });
     let updated=0;
-    for (const {sku,price} of changes) {
-      if (price===catalog[sku].salePrice) continue;
+    for (const {sku,price,start,end} of changes) {
+      if (!online&&price===catalog[sku].salePrice) continue;
       if(online){
+        const rule=catalog[sku].rule;
+        const configuredPrice=rule?rule.type==='fixed'?rule.value:rupees(Math.max(1,Math.round(cents(catalog[sku].regularPrice)*(100-rule.value)/100))):catalog[sku].regularPrice;
+        if(price===configuredPrice&&start===(rule?.start||'')&&end===(rule?.end||''))continue;
         const promotions=this.website.promotions??=Object.create(null);
         if(price===catalog[sku].regularPrice)delete promotions[sku];
-        else promotions[sku]={type:'fixed',value:price};
+        else promotions[sku]={type:'fixed',value:price,start,end};
         updated++;
         continue;
       }
