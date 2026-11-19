@@ -4,8 +4,8 @@ import {createContext,useContext,useEffect,useState} from 'react';
 import {staffCanOpen,staffPortals} from '../../../../shared/staff-access.mjs';
 import {api} from '../lib/api';
 import ActionFeedback from './ActionFeedback';
+import {signOutStaff,staffTokenKey as tokenKey} from '../lib/staff-auth';
 
-const tokenKey='trd_staff_token';
 const StaffContext=createContext(null);
 export const useStaff=()=>useContext(StaffContext);
 
@@ -52,7 +52,7 @@ export default function StaffPortal({portal,children}) {
  async function logout() {
   setBusy(true);setError('');
   try {
-   await api('/api/auth/staff/logout',{token:session.token,method:'POST'});
+   await signOutStaff(session.token);
   } catch(error) {
    if(error.status!==401){setError(error.message);return;}
   } finally {setBusy(false);}
