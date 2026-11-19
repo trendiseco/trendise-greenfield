@@ -1,0 +1,10 @@
+.delivery-map-dialog{width:min(900px,96vw);max-width:900px}
+.delivery-map-search{display:flex;align-items:end;gap:16px;margin:20px 0}
+.delivery-map-search label{display:grid;gap:8px;flex:1}
+.delivery-map-search input{padding:12px;width:100%;box-sizing:border-box}
+.delivery-map-canvas{height:350px;width:100%;background:#e1e5df;position:relative;z-index:0;margin-bottom:18px}
+.delivery-map-canvas:focus-visible{outline:3px solid #344235}
+.delivery-pin-icon{background:transparent;border:0}
+.delivery-pin-icon span{display:block;width:26px;height:26px;background:#773c32;border:3px solid white;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 8px #0008}
+.delivery-map-result{padding:18px;background:#e8edde;margin-top:18px}
+@media(max-width:600px){.delivery-map-search{align-items:stretch;flex-direction:column}.delivery-map-canvas{height:300px}.delivery-map-dialog .button-row{flex-wrap:wrap}.delivery-map-dialog .button{white-space:normal}}

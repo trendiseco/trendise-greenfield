@@ -1,3 +1,4 @@
+import {createDeliveryMap} from './delivery-map.mjs';
 import {createCustomerAuth,bindCustomerIdentity} from './customer-auth.mjs';
 import {centralBalances} from './warehouse-inventory.mjs';
 import {createHash} from 'node:crypto';
@@ -29,7 +30,7 @@ async function bodyOf(req){
 function tokenFrom(req){const h=req.headers.authorization||'';return h.startsWith('Bearer ')?h.slice(7):'';}
 
 const ratePath='/api/admin/shipping/rates';
-export function createServer(core=commerce,lookupRates=createShiprocketLookup(),customerOtp=createCustomerOtp(),customerAuth=createCustomerAuth()){
+export function createServer(core=commerce,lookupRates=createShiprocketLookup(),customerOtp=createCustomerOtp(),customerAuth=createCustomerAuth(),deliveryMap=createDeliveryMap()){
  if(customerOtp)core.requireVerifiedSms=true;
 const handle=async (req,res)=>{
   const origin=req.headers.origin||'';
@@ -46,6 +47,10 @@ const handle=async (req,res)=>{
     if(is('POST','/api/delivery/events')){
       authorizeShipmentEvent(process.env.SHIPROCKET_WEBHOOK_SECRET,req.headers['x-api-key']);
       return respond(res,200,applyShipmentEvent(core,await bodyOf(req)));
+    }
+    if(is('POST','/api/delivery/map-address')){
+      const body=await bodyOf(req);
+      return respond(res,200,await deliveryMap(body.lat,body.lon));
     }
     if(is('GET','/api/auth/email-config'))return respond(res,200,customerAuth.config);
     if(is('POST','/api/auth/customer/session')){
@@ -205,7 +210,7 @@ const handle=async (req,res)=>{
     if(is('POST','/api/tryon/mock')){core.session(tokenFrom(req),['customer']);const b=await bodyOf(req);if(!b.sku)throw new DomainError(400,'Select a product');core.product(b.sku);return respond(res,200,{status:'mock_only',generatedImage:null,message:'Virtual try-on generation is intentionally disabled in Development. No photos are uploaded to AI providers.'});}
     return respond(res,404,{error:'Endpoint not found',code:'NOT_FOUND'});
   }catch(err){
-    if(core.unit&&path!=='/api/auth/customer/session'&&path!==ratePath&&!(customerOtp&&req.method==='POST'&&path==='/api/auth/request-otp'))throw err;
+    if(core.unit&&path!=='/api/delivery/map-address'&&path!=='/api/auth/customer/session'&&path!==ratePath&&!(customerOtp&&req.method==='POST'&&path==='/api/auth/request-otp'))throw err;
     const status=err instanceof DomainError?err.status:500;
     if(status===500)console.error(err);
     return respond(res,status,{error:status===500?'Internal server error':err.message,code:err.code||'INTERNAL_ERROR'});
@@ -214,7 +219,7 @@ const handle=async (req,res)=>{
 return http.createServer(async(req,res)=>{
  const path=new URL(req.url,'http://localhost').pathname;
  const smsSend=customerOtp&&req.method==='POST'&&path==='/api/auth/request-otp';
- if(!core.unit||path==='/api/auth/customer/session'||smsSend||req.method==='OPTIONS'||(req.method==='POST'&&path===ratePath))return handle(req,res);
+ if(!core.unit||path==='/api/delivery/map-address'||path==='/api/auth/customer/session'||smsSend||req.method==='OPTIONS'||(req.method==='POST'&&path===ratePath))return handle(req,res);
  let response;const buffered={setHeader:(...args)=>res.setHeader(...args),writeHead:(status,headers)=>{response={status,headers};},end:body=>{response={...response,body};}};
  // Account reads can initialize a profile. Other GET handlers only need a snapshot.
  const readOnly=req.method==='GET'&&path!=='/api/account';
