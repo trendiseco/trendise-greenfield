@@ -1,3 +1,4 @@
+import {customerIdentity} from './customer-identity.mjs';
 import {centralWarehouseId} from './seed.mjs';
 import {randomUUID} from 'node:crypto';
 import {DomainError} from './errors.mjs';
@@ -49,7 +50,7 @@ export const returnInspectionMethods={
     }));
     replacementOrderId=`TRD-${String(this.orders.size+10001).padStart(5,'0')}`;
     const replacementOrder={
-     id:replacementOrderId,phone:order.phone,items:lines,address:structuredClone(order.address),
+     id:replacementOrderId,...customerIdentity(order),items:lines,address:structuredClone(order.address),
      quote:{items:lines,subtotal:exchange.subtotal,discount:exchange.credit,exchangeCredit:exchange.credit,
       couponDiscount:0,pointsDiscount:0,shipping:0,total:exchange.difference},
      payment:{method:'exchange',provider:exchange.difference?'MOCK_COD':'NONE',

@@ -206,7 +206,7 @@ export const posMethods = {
     const location = manager ? null : this.posLocation(session);
     const sales = [...this.sales.values()].filter(sale => sale.customer?.phone === phone && (!location || sale.locationId === location.id)).reverse();
     const orders = [...this.orders.values()].filter(order => order.phone === phone).reverse().map(purchaseOrder);
-    return {phone, sales, orders, name: sales[0]?.customer?.name || this.website.customers[phone]?.name || orders[0]?.name};
+    return {phone, sales, orders, name: sales[0]?.customer?.name || Object.values(this.website.customers).find(customer=>customer.phone===phone)?.name || orders[0]?.name};
   },
 
   purchaseExtract(session, {channel,from,to}) {

@@ -1,10 +1,11 @@
+import {customerKey,belongsToCustomer,customerIdentity,orderCustomer} from './customer-identity.mjs';
 import {effectivePermissions,reservedPermissions,staffPermissions} from '../../../shared/staff-access.mjs';
 import {posMethods} from './pos.mjs';
 import {warehouseInventory} from './warehouse-inventory.mjs';
 import {resolvePickLine} from '../../../shared/warehouse-pick.mjs';
 import {returnInspectionMethods} from './return-inspection.mjs';
 import {adminOrderMethods} from './admin-orders.mjs';
-import {splitAmounts,splitEligible} from '../../../shared/split-payment.mjs';
+import {splitAmounts,splitEligible,codEligible} from '../../../shared/split-payment.mjs';
 import {lookupDeliveryPin} from './pin-directory.mjs';
 import {orderEligibility,paymentLabels,returnReasons,policyDocument} from '../../../shared/order-policy.mjs';
 import {upgradeSizeChart,validateSizeChart} from '../../../shared/size-chart.mjs';
@@ -99,7 +100,7 @@ export class Commerce {
     return {...session,locationType:this.locations.find(location=>location.id===session.locationId)?.type,permissions:effectivePermissions(session.role,this.roles[session.role])};
   }
 
-  session(token,allowed) {const session=this.sessions.get(token);if(!session||(session.userId&&!session.expiresAt)||(session.expiresAt&&session.expiresAt<=Date.now())||(session.role==='customer'&&this.requireVerifiedSms&&!session.smsVerified))throw new DomainError(401,'Please log in');if(session.role==='customer')session.phone=String(session.phone).replace(/\D/g,'').slice(-10);if(session.userId){const user=this.users.find(u=>u.id===session.userId&&u.active);if(!user)throw new DomainError(401,'Staff access revoked');session.role=user.role;session.locationId=user.locationId;}if(allowed&&!allowed.includes(session.role))throw new DomainError(403,'You do not have permission for this action');return session;}
+  session(token,allowed) {const session=this.sessions.get(token);if(!session||(session.userId&&!session.expiresAt)||(session.expiresAt&&session.expiresAt<=Date.now())||(session.role==='customer'&&this.requireVerifiedSms&&!session.smsVerified&&!session.identityVerified))throw new DomainError(401,'Please log in');if(session.role==='customer')session.phone=String(session.phone).replace(/\D/g,'').slice(-10);if(session.userId){const user=this.users.find(u=>u.id===session.userId&&u.active);if(!user)throw new DomainError(401,'Staff access revoked');session.role=user.role;session.locationId=user.locationId;}if(allowed&&!allowed.includes(session.role))throw new DomainError(403,'You do not have permission for this action');return session;}
   normalizeLines(lines) {if(!Array.isArray(lines)||!lines.length)throw new DomainError(400,'Add at least one product');const map=new Map();for(const raw of lines){const sku=String(raw.sku||'');const qty=Number(raw.qty);if(!Number.isInteger(qty)||qty<1||qty>25)throw new DomainError(400,'Quantity must be between 1 and 25');if(this.product(sku).variant.active===false)throw new DomainError(409,'Variant is inactive');map.set(sku,(map.get(sku)||0)+qty);}return [...map].map(([sku,qty])=>{if(qty>25)throw new DomainError(400,'Maximum quantity exceeded');return {sku,qty};});}
   websitePriceFields(variant) {
     const {regularPrice,salePrice}=this.posPricing(variant,true);
@@ -127,23 +128,25 @@ export class Commerce {
     if(body.acceptedPolicyVersion!==this.version)throw new DomainError(400,'You must accept the current Terms & Conditions','TERMS_REQUIRED');
     const paymentMethod=body.paymentMethod??'card';
     if(typeof paymentMethod!=='string'||!Object.hasOwn(paymentLabels,paymentMethod)||paymentMethod==='exchange')throw new DomainError(400,'Choose a valid payment method');
+    if(paymentMethod==='cod'&&!codEligible(lookupDeliveryPin(body.address.pincode)))throw new DomainError(400,'Cash on delivery is available only for verified PIN areas within 1,000 km of 501505.','COD_UNAVAILABLE');
     if(paymentMethod==='split'&&!splitEligible(lookupDeliveryPin(body.address.pincode)))throw new DomainError(400,'Partial payment is available only for verified PIN areas at least 1,000 km from 501505.','SPLIT_PAYMENT_UNAVAILABLE');
     const lines=this.normalizeLines(body.items);
     const quote=this.onlineQuote(session,body);
     const allocations=this.allocations(lines);
     const id=`R-${randomUUID().slice(0,8).toUpperCase()}`;
-    this.reservations.set(id,{id,status:'active',paymentMethod,phone:session.phone,allocations,items:lines,quote,address:clone(body.address),acceptedPolicyVersion:this.version,acceptedAt:new Date().toISOString(),expiresAt:Date.now()+10*60*1000});
+    this.reservations.set(id,{id,status:'active',paymentMethod,...customerIdentity(session),allocations,items:lines,quote,address:clone(body.address),acceptedPolicyVersion:this.version,acceptedAt:new Date().toISOString(),expiresAt:Date.now()+10*60*1000});
     return {reservationId:id,expiresAt:new Date(Date.now()+10*60*1000).toISOString(),quote,mockPaymentProvider:'MOCK_RAZORPAY',message:'No actual payment was initiated'};
   }
   async confirmMockPayment(session,reservationId,idempotencyKey){return this.serialized(()=>this.finishCheckout(session,reservationId,idempotencyKey));}
   finishCheckout(session,reservationId,idempotencyKey){
     if(session.role!=='customer')throw new DomainError(403,'Customer login required');
     if(!idempotencyKey||idempotencyKey.length<6)throw new DomainError(400,'Idempotency key required');
-    const eventKey=`payment:${session.phone}:${idempotencyKey}`;
+    const eventKey=`payment:${customerKey(session)}:${idempotencyKey}`;
     const known=this.getIdempotent(eventKey,reservationId);if(known)return known;
     const reservation=this.reservations.get(reservationId);
-    if(!reservation||reservation.phone!==session.phone)throw new DomainError(404,'Checkout reservation not found');
+    if(!reservation||!belongsToCustomer(reservation,session))throw new DomainError(404,'Checkout reservation not found');
     if(reservation.status!=='active'||reservation.expiresAt<=Date.now())throw new DomainError(409,'Reservation expired or already processed','RESERVATION_EXPIRED');
+    if(reservation.paymentMethod==='cod'&&!codEligible(lookupDeliveryPin(reservation.address.pincode)))throw new DomainError(400,'Cash on delivery is unavailable for this PIN. Start checkout with another payment method.','COD_UNAVAILABLE');
     if(reservation.acceptedPolicyVersion!==this.version)throw new DomainError(400,'Terms changed. Review and accept the current version.','TERMS_REQUIRED');
     if(reservation.quote.items.some(item=>this.hiddenCategories.includes(this.product(item.sku).product.category)))throw new DomainError(409,'A category on this bill is hidden. Start checkout again.');
     if((reservation.quote.redeemPoints||0)>this.customer(session).points)throw new DomainError(409,'Points balance changed; retry checkout');
@@ -152,7 +155,7 @@ export class Commerce {
     reservation.status='converted';
     const orderId=`TRD-${String(this.orders.size+10001).padStart(5,'0')}`;
     const method=reservation.paymentMethod||'card',cod=method==='cod',split=method==='split';
-    const order={id:orderId,phone:session.phone,items:reservation.quote.items,quote:reservation.quote,address:reservation.address,status:cod||split?'confirmed':'paid',payment:{method,provider:split?'MOCK_SPLIT':cod?'MOCK_COD':method==='phonepe'?'MOCK_PHONEPE':'MOCK_RAZORPAY',status:split?'partially_paid':cod?'due_on_delivery':'captured',...(split?{split:splitAmounts(reservation.quote.total)}:{}),reference:cod?null:`MOCKPAY-${orderId}`},allocations:reservation.allocations,verified:{},shipment:null,placedAt:new Date(this.orderNow()).toISOString(),acceptedPolicyVersion:reservation.acceptedPolicyVersion,acceptedAt:reservation.acceptedAt,termsAcceptance:{accepted:true,version:reservation.acceptedPolicyVersion,customerId:session.phone,orderId,acceptedAt:reservation.acceptedAt}};
+    const order={id:orderId,...customerIdentity(session),items:reservation.quote.items,quote:reservation.quote,address:reservation.address,status:cod||split?'confirmed':'paid',payment:{method,provider:split?'MOCK_SPLIT':cod?'MOCK_COD':method==='phonepe'?'MOCK_PHONEPE':'MOCK_RAZORPAY',status:split?'partially_paid':cod?'due_on_delivery':'captured',...(split?{split:splitAmounts(reservation.quote.total)}:{}),reference:cod?null:`MOCKPAY-${orderId}`},allocations:reservation.allocations,verified:{},shipment:null,placedAt:new Date(this.orderNow()).toISOString(),acceptedPolicyVersion:reservation.acceptedPolicyVersion,acceptedAt:reservation.acceptedAt,termsAcceptance:{accepted:true,version:reservation.acceptedPolicyVersion,customerId:customerKey(session),orderId,acceptedAt:reservation.acceptedAt}};
     this.applyWebsiteRewards(session,order);
     this.orders.set(orderId,order);
     this.audit.push({type:cod||split?'ORDER_CONFIRMED':'ORDER_PAID',id:orderId,at:new Date().toISOString()});
@@ -161,7 +164,7 @@ export class Commerce {
   async placeOrder(session,body,key){return this.serialized(()=>{
     if(session.role!=='customer')throw new DomainError(403,'Customer login required');
     if(typeof key!=='string'||key.length<6||key.length>100)throw new DomainError(400,'A checkout request key is required');
-    const eventKey=`checkout:${session.phone}:${key}`, fingerprint=JSON.stringify(body);
+    const eventKey=`checkout:${customerKey(session)}:${key}`, fingerprint=JSON.stringify(body);
     const previous=this.getIdempotent(eventKey,fingerprint);if(previous)return previous;
     const {reservationId}=this.reserveCheckout(session,body);
     try{const result=this.finishCheckout(session,reservationId,'checkout-'+key);this.setIdempotent(eventKey,fingerprint,result);return result;}
@@ -192,7 +195,7 @@ export class Commerce {
     const response={sale:clone(sale),message:'Demo sale completed. No payment collected.'};this.setIdempotent(eventKey,fingerprint,response);return response;
   });}
   ordersFor(session) {
-    if(session.role==='customer')return [...this.orders.values()].filter(order=>order.phone===session.phone).map(order=>{
+    if(session.role==='customer')return [...this.orders.values()].filter(order=>belongsToCustomer(order,session)).map(order=>{
       const eligibility=orderEligibility(order,this.orderNow());
       const items=order.items.map(item=>({...clone(item),...(eligibility.canReturn?{exchange:this.exchangeChoices(item,order.quote)}:{})}));
       return {...clone(order),...eligibility,items};
@@ -284,7 +287,7 @@ export class Commerce {
   orderNow(){return this.clock?.().getTime()??Date.now();}
   ownOrder(session,id){
     if(session.role!=='customer')throw new DomainError(403,'Customer login required');
-    const order=this.orders.get(id);if(!order||order.phone!==session.phone)throw new DomainError(404,'Order not found');return order;
+    const order=this.orders.get(id);if(!order||!belongsToCustomer(order,session))throw new DomainError(404,'Order not found');return order;
   }
   async cancelOrder(session,id){return this.serialized(()=>{
     const order=this.ownOrder(session,id);if(order.status==='cancelled')return clone(order);
@@ -296,7 +299,7 @@ export class Commerce {
     const customer=this.customer(session);
     const earned=this.website.rewardLedger.filter(e=>e.ref===id&&e.type==='EARN').reduce((n,e)=>n+e.delta,0);
     const redeemed=order.quote.redeemPoints||0;
-    for(const [type,delta]of [['CANCEL_EARN',-Math.min(customer.points,earned)],['CANCEL_REDEEM',redeemed]])if(delta){customer.points+=delta;this.website.rewardLedger.push({id:randomUUID(),phone:session.phone,delta,balance:customer.points,type,ref:id,at:new Date(this.orderNow()).toISOString()});}
+    for(const [type,delta]of [['CANCEL_EARN',-Math.min(customer.points,earned)],['CANCEL_REDEEM',redeemed]])if(delta){customer.points+=delta;this.website.rewardLedger.push({id:randomUUID(),...customerIdentity(session),delta,balance:customer.points,type,ref:id,at:new Date(this.orderNow()).toISOString()});}
     this.website.couponUses=this.website.couponUses.filter(u=>u.orderId!==id);
     order.status='cancelled';order.cancelledAt=new Date(this.orderNow()).toISOString();
     const refunded=order.payment.split?.upfront;
@@ -343,7 +346,7 @@ export class Commerce {
     if(order.status==='delivered')return clone(order);
     if(order.status!=='shipped')throw new DomainError(409,'Only dispatched orders can be marked delivered');
     order.status='delivered';order.deliveredAt=new Date(this.orderNow()).toISOString();
-    if(['cod','split'].includes(order.payment.method)){order.payment.status='mock_collected';this.earnOrderPoints({role:'customer',phone:order.phone},order);}
+    if(['cod','split'].includes(order.payment.method)){order.payment.status='mock_collected';this.earnOrderPoints(orderCustomer(order),order);}
     if(order.payment.method==='exchange'&&order.payment.status==='due_on_delivery')order.payment.status='mock_collected';
     this.event(session,'MOCK_DELIVERED',id);return clone(order);
   });}

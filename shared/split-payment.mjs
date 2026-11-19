@@ -9,6 +9,7 @@ export function deliveryDistanceKm(entry){
  const a=Math.sin(radians(lat-origin[0])/2)**2+Math.cos(radians(origin[0]))*Math.cos(radians(lat))*Math.sin(radians(lon-origin[1])/2)**2;
  return 6371*2*Math.asin(Math.sqrt(Math.min(1,Math.max(0,a))));
 }
+export function codEligible(entry){const km=deliveryDistanceKm(entry);return km!==null&&km<=splitMinimumKm;}
 export function splitEligible(entry){const km=deliveryDistanceKm(entry);return km!==null&&km>=splitMinimumKm;}
 export function splitAmounts(total){
  const paise=Math.round(total*100);

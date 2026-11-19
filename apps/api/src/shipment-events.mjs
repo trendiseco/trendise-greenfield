@@ -1,3 +1,4 @@
+import {orderCustomer} from './customer-identity.mjs';
 import {timingSafeEqual} from 'node:crypto';
 import {DomainError} from './errors.mjs';
 
@@ -42,7 +43,7 @@ export function applyShipmentEvent(core,event){
    order.status='delivered';order.deliveredAt=at;
    if(order.payment?.status==='due_on_delivery'){
     order.payment.status='mock_collected';
-    core.earnOrderPoints({role:'customer',phone:order.phone},order);
+    core.earnOrderPoints(orderCustomer(order),order);
    }
   }
  }
