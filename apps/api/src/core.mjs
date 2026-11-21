@@ -26,6 +26,7 @@ export class Commerce {
     this.hiddenCategories=[];
     this.posPromotions={};
     this.posTerms=null;
+    this.posReceipt={};
     this.products=clone(initialProducts).map(upgradeSizeChart);
     this.drafts={}; this.approvals=[];
     this.roles={admin:['catalog.edit','catalog.submit','inventory.read','pos.sell','warehouse.fulfill','website.manage','offers.manage','rewards.manage'],superadmin:['*'],pos:['pos.sell'],warehouse:['warehouse.fulfill']};
@@ -190,7 +191,7 @@ export class Commerce {
     if(!['Cash','UPI','Card'].includes(body.paymentMethod))throw new DomainError(400,'Select a mock store payment method');
     const id=`POS-${String(this.sales.size+1).padStart(5,'0')}`;
     for(const allocation of allocations)this.decrement(allocation,'MOCK_POS_SALE',id);
-    const sale={id,items:quote.items,quote,locationId:location.id,locationName:location.name,customer,staffId:session.userId,terms:this.posReceiptTerms(),payment:{method:body.paymentMethod,status:'simulated',reference:`MOCK-${id}`},at:new Date(this.orderNow()).toISOString()};
+    const sale={id,items:quote.items,quote,locationId:location.id,locationName:location.name,customer,staffId:session.userId,receipt:clone(this.posReceipt||{}),terms:this.posReceiptTerms(),payment:{method:body.paymentMethod,status:'simulated',reference:`MOCK-${id}`},at:new Date(this.orderNow()).toISOString()};
     this.sales.set(id,sale);this.audit.push({type:'POS_SALE',id,at:sale.at});
     const response={sale:clone(sale),message:'Demo sale completed. No payment collected.'};this.setIdempotent(eventKey,fingerprint,response);return response;
   });}

@@ -1,3 +1,4 @@
+import {receiptFields} from '../../../shared/pos-receipt.mjs';
 import {promotionSchedule,promotionActive} from '../../../shared/promotion-schedule.mjs';
 import {centralWarehouseId} from './seed.mjs';
 import {posExchangeTerms,returnMs} from '../../../shared/order-policy.mjs';
@@ -66,7 +67,7 @@ export const posMethods = {
       const gross = unit * qty;
       const gst = Math.round(gross * 5 / 105);
       return {sku, qty, name: product.name, barcode: variant.barcode, size: variant.size, color: variant.color,
-        regularPrice, unitPrice: rupees(unit), lineTotal: rupees(gross), gst: rupees(gst)};
+        ...(variant.hsn||product.hsn?{hsn:variant.hsn||product.hsn}:{}),regularPrice, unitPrice: rupees(unit), lineTotal: rupees(gross), gst: rupees(gst)};
     });
     const subtotal = items.reduce((sum, item) => sum + cents(item.regularPrice) * item.qty, 0);
     const total = items.reduce((sum, item) => sum + cents(item.lineTotal), 0);
@@ -198,7 +199,7 @@ export const posMethods = {
         const id = `POS-${String(this.sales.size+index+1).padStart(5,'0')}`;
         return {id, items:quote.items, quote, locationId:location.id, locationName:location.name,
           customer:{name:'Sample POS Customer',phone:'9999900001'}, staffId:session.userId,
-          terms:this.posReceiptTerms(), payment:{method:scenario.method,status:'simulated',reference:`MOCK-${id}`},
+          receipt:structuredClone(this.posReceipt||{}),terms:this.posReceiptTerms(), payment:{method:scenario.method,status:'simulated',reference:`MOCK-${id}`},
           at, returns:[], example:scenario.label};
       });
       for (const sale of examples) this.sales.set(sale.id,sale);
@@ -293,15 +294,27 @@ export const posMethods = {
 
   posTermsSettings(session) {
     this.permit(session,'pos.terms');
-    return {text:this.posTerms??'',policy:posExchangeTerms};
+    return {text:this.posTerms??'',policy:posExchangeTerms,receipt:structuredClone(this.posReceipt||{})};
   },
 
-  savePosTerms(session, text) {
+  savePosTerms(session, text, receipt) {
     this.permit(session,'pos.terms');
     if (typeof text !== 'string' || !text.trim() || text.length > 6000) {
       throw new DomainError(400, 'Enter receipt terms of up to 6,000 characters');
     }
+    let details;
+    if(receipt!==undefined){
+      if(!receipt||typeof receipt!=='object'||Array.isArray(receipt))throw new DomainError(400,'Enter valid receipt business details');
+      details=Object.fromEntries(Object.keys(receiptFields).map(key=>{
+        const value=receipt[key]??'';
+        if(typeof value!=='string'||value.length>(key==='address'?600:150)||/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(value))throw new DomainError(400,'Check '+receiptFields[key]);
+        return [key,value.trim()];
+      }));
+      if(details.gstin&&!/^[0-9]{2}[A-Z0-9]{13}$/.test(details.gstin))throw new DomainError(400,'GSTIN must contain 15 uppercase letters and digits, starting with the state code');
+      if(details.email&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(details.email))throw new DomainError(400,'Enter a valid billing email');
+    }
     this.posTerms = text;
+    if(details)this.posReceipt=details;
     this.event(session, 'POS_TERMS_UPDATED', 'store-pos');
     return this.posTermsSettings(session);
   },

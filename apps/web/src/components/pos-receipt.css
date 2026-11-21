@@ -1,0 +1,29 @@
+.pos-receipt-toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:20px}
+.pos-receipt-toolbar small{flex-basis:100%}
+.pos-receipt .thermal-receipt{width:74mm;max-width:100%;box-sizing:border-box;margin:0 auto;padding:4mm;background:#fff;color:#000;border:1px solid #ddd;font:12px/1.35 'Courier New',monospace;overflow-wrap:anywhere;letter-spacing:0}
+.thermal-receipt p{margin:1px 0;font:inherit;color:#000;line-height:inherit}
+.thermal-receipt h2{font:700 16px/1.3 'Courier New',monospace;margin:8px 0 3px}
+.thermal-receipt h3{font:700 12px/1.35 'Courier New',monospace;margin:3px 0}
+.thermal-heading,.thermal-centre,.thermal-receipt .thermal-title{text-align:center}
+.thermal-heading img{display:block;width:42mm;height:auto;margin:0 auto;filter:grayscale(1)}
+.thermal-address,.thermal-terms{white-space:pre-wrap}
+.thermal-divider{border-top:1px dashed #333;margin:8px 0}
+.thermal-meta{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.thermal-meta>div:last-child,.thermal-right{text-align:right}
+.thermal-item{break-inside:avoid;margin:5px 0 9px}
+.thermal-item-head>div,.thermal-item-values{display:grid;grid-template-columns:1fr 1fr 1fr;text-align:right;gap:4px}
+.thermal-item-head>div>span:first-child,.thermal-item-values>span:first-child{text-align:left}
+.thermal-code{font-size:10px!important}
+.thermal-row{display:flex;justify-content:space-between;gap:8px}
+.thermal-row>span:last-child,.thermal-row>strong:last-child,.thermal-row>b:last-child{white-space:nowrap}
+.thermal-indent{padding-left:15%}
+.thermal-total{font-size:15px;margin:4px 0}
+.thermal-demo{font-size:10px!important;margin:8px 0!important}
+@media print{
+ @page{margin:3mm}
+ .staff-portal-nav,.pos-receipt-toolbar{display:none!important}
+ .pos-workspace{width:auto!important;max-width:none!important;margin:0!important;padding:0!important}
+ .pos-workspace .pos-receipt{margin:0!important;padding:0!important;border:0!important;background:#fff!important}
+ .pos-receipt .thermal-receipt{width:74mm;max-width:100%;margin:0;padding:0;border:0;box-shadow:none}
+ .thermal-receipt{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+}

@@ -8,21 +8,7 @@ import PurchaseChannel from './PurchaseChannel';
 
 export const saleDate = at => new Date(at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata',dateStyle:'medium',timeStyle:'short'});
 
-export function PosReceipt({sale,onClose,canPrint=true}) {
- const {quote}=sale;
- return <section className="staff-panel pos-receipt" aria-label="Saved receipt">
-  <div className="panel-heading"><h2>TRENDISE · Store receipt</h2><div className="button-row pos-print-hide">{canPrint&&<button onClick={()=>window.print()}>Print bill</button>}<button onClick={onClose}>Close receipt</button></div></div>
-  <p>{sale.example&&'Sample bill · '}{sale.id} · {sale.locationName||sale.locationId} · {saleDate(sale.at)}</p>
-  <p>{sale.customer ? `${sale.customer.name} · ${sale.customer.phone}` : 'Customer details unavailable on this older bill'}{sale.staffId&&` · Cashier ${sale.staffId}`}</p>
-  <BillItems items={sale.items}/>
-  <dl><dt>Subtotal</dt><dd>{cash(quote.subtotal)}</dd><dt>Discount</dt><dd>{cash(quote.discount)}</dd>
-   {quote.gstRate&&<><dt>Taxable value</dt><dd>{cash(quote.taxable)}</dd><dt>Included GST ({quote.gstRate}%)</dt><dd>{cash(quote.gst)}</dd></>}
-   <dt>Total</dt><dd>{cash(quote.total)}</dd><dt>Payment</dt><dd>{sale.payment.method} · simulated</dd>
-  </dl>
-  <h3>Terms & conditions</h3>{typeof sale.terms==='string'?<p className="pos-receipt-terms">{sale.terms}</p>:<ul>{(sale.terms||['Keep the original bill and product tags for return verification.','Development receipt. Payment and refund records are simulated.']).map(term=><li key={term}>{term}</li>)}</ul>}
-  <ReturnEntries sale={sale}/>
- </section>;
-}
+export {default as PosReceipt} from './PosReceipt';
 
 function BillItems({items}) {
  return <ul>{items.map(line=><li key={line.sku}><strong>{line.name}</strong> · {line.color} / {line.size} · {line.sku}{line.barcode&&` · Barcode ${line.barcode}`} · {line.qty} × {cash(line.unitPrice)}</li>)}</ul>;

@@ -8,8 +8,8 @@ import { readFile } from 'node:fs/promises';
 import { Commerce } from './core.mjs';
 import {rebuildProjections} from './database-projections.mjs';
 const maps=['reservations','orders','sales','sessions','otpRequests','eventIds'];
-const fields=['products','locations','stock','ledger','audit','drafts','approvals','roles','users','website','additionalCategories','hiddenCategories','posPromotions','posTerms','policy','version','policyHistory'];
-const projectionKeys=[...fields.filter(key=>!['additionalCategories','hiddenCategories','posPromotions','posTerms','policy','version','policyHistory'].includes(key)),...maps.filter(key=>!['sessions','otpRequests'].includes(key))];
+const fields=['products','locations','stock','ledger','audit','drafts','approvals','roles','users','website','additionalCategories','hiddenCategories','posPromotions','posTerms','posReceipt','policy','version','policyHistory'];
+const projectionKeys=[...fields.filter(key=>!['additionalCategories','hiddenCategories','posPromotions','posTerms','posReceipt','policy','version','policyHistory'].includes(key)),...maps.filter(key=>!['sessions','otpRequests'].includes(key))];
 export function snapshot(commerce) {
   return Object.fromEntries([
     ...fields.map(key => [key, commerce[key]]),
